@@ -1340,6 +1340,17 @@ namespace winrt::TerminalApp::implementation
         }
     }
 
+    // Host-layer Win32 OLE drop target (elevated path) forwards dropped file
+    // paths here. x/y are client pixels relative to the XAML island; the page
+    // hit-tests to route to the enhanced-input panel or the active terminal.
+    void TerminalWindow::HandleFileDrop(int32_t x, int32_t y, const winrt::hstring& paths)
+    {
+        if (_root)
+        {
+            _root->HandleFileDrop(x, y, paths);
+        }
+    }
+
     uint32_t TerminalWindow::TabCount() const
     {
         return _root ? _root->TabCount() : 0;

@@ -29,6 +29,7 @@
 #include "FreOverlay.h"
 #include "MarkdownPaneContent.h"
 #include "Remoting.h"
+#include "EnhancedInputContent.h"
 #include "ScratchpadContent.h"
 #include "SettingsPaneContent.h"
 #include "SharedWta.h"
@@ -226,6 +227,23 @@ namespace clipboard
         }
 
         return {};
+    }
+
+    // True when the OS clipboard holds a bitmap/PNG image but no text. The paste
+    // path uses this to decide whether Ctrl+V in the agent pane should capture an
+    // image (by replaying Alt+V) instead of pasting text. This is only a
+    // format-availability query — it never opens the clipboard — so it cannot
+    // race the image read wta performs when it receives the replayed Alt+V.
+    bool hasImageButNoText()
+    {
+        if (IsClipboardFormatAvailable(CF_UNICODETEXT) || IsClipboardFormatAvailable(CF_TEXT))
+        {
+            return false;
+        }
+        static const auto pngFormat = RegisterClipboardFormatW(L"PNG");
+        return IsClipboardFormatAvailable(CF_DIB) ||
+               IsClipboardFormatAvailable(CF_DIBV5) ||
+               (pngFormat != 0 && IsClipboardFormatAvailable(pngFormat));
     }
 } // namespace clipboard
 
@@ -2446,6 +2464,75 @@ namespace winrt::TerminalApp::implementation
         _UpdateBottomBarState();
     }
 
+    // Bottom-bar enhanced-input toggle click (Phase 6). Mirrors Alt+E.
+    void TerminalPage::_EnhancedInputToggleButtonOnClick(const winrt::Windows::Foundation::IInspectable& /*sender*/,
+                                                         const winrt::Windows::UI::Xaml::RoutedEventArgs& /*eventArgs*/)
+    {
+        _ToggleEnhancedInputPane();
+    }
+
+    // Open the enhanced-input panel on the focused tab, or close it if it's already
+    // there — the single source of truth shared by the bottom-bar button and the
+    // Alt+E keybinding (routed here from _HandleSplitPane). The panel is a right-
+    // docked pane; being split beside a terminal it's never the tab's only pane.
+    void TerminalPage::_ToggleEnhancedInputPane()
+    {
+        const auto activeTab{ _GetFocusedTabImpl() };
+        if (!activeTab)
+        {
+            return;
+        }
+
+        // Find an existing EnhancedInputContent pane in this tab.
+        std::shared_ptr<Pane> existing{ nullptr };
+        if (const auto rootPane{ activeTab->GetRootPane() })
+        {
+            existing = rootPane->WalkTree([](const std::shared_ptr<Pane>& p) -> std::shared_ptr<Pane> {
+                if (p->GetContent().try_as<winrt::TerminalApp::EnhancedInputContent>())
+                {
+                    return p;
+                }
+                return nullptr;
+            });
+        }
+
+        if (existing)
+        {
+            // Already open → collapse it. Unzoom first (a zoomed pane must be
+            // restored before its tree changes), then close directly — the same
+            // programmatic-close the agent pane uses (_TeardownAgentPane). We do
+            // NOT route through _HandleClosePaneRequested: this is a toggle
+            // collapse, not a user close, so it must not land on the
+            // restore-last-closed stack (that's reserved for real pane closes).
+            _UnZoomIfNeeded();
+            existing->Close();
+        }
+        else
+        {
+            // Not open → dock it as the OUTERMOST full-height right column via
+            // SplitPaneAtRoot. The previous code used _SplitPane, which splits
+            // only the ACTIVE pane — so when an agent pane was also open, the
+            // agent's own SplitPaneAtRoot(Down) wrapped the whole tree and the
+            // panel got squeezed into the top-right corner instead of spanning
+            // the full height. Splitting Right at the root makes the panel a
+            // full-height right column regardless of the rest of the tree, and
+            // Tab::SplitPaneAtRoot now docks a later agent pane into the terminal
+            // region beside it (not around it). SplitPaneAtRoot (unlike
+            // _SplitPane) neither unzooms nor focuses the new pane, so do both
+            // explicitly here.
+            if (const auto newPane = _MakePane(BaseContentArgs{ L"enhancedInput" }, nullptr))
+            {
+                _UnZoomIfNeeded();
+                activeTab->SplitPaneAtRoot(SplitDirection::Right, newPane);
+                if (const auto& content{ newPane->GetContent() })
+                {
+                    content.Focus(FocusState::Programmatic);
+                }
+            }
+        }
+        _UpdateBottomBarState();
+    }
+
     // Window-level bottom-bar "sessions toggle" click. Mirrors the
     // Ctrl+Shift+/ keybinding, scoped to the active tab:
     //   - active tab has no agent pane → open one in sessions view
@@ -2612,7 +2699,12 @@ namespace winrt::TerminalApp::implementation
             {
                 const bool isTerm = content.try_as<TerminalApp::TerminalPaneContent>() != nullptr;
                 const bool isAgent = content.try_as<TerminalApp::AgentPaneContent>() != nullptr;
-                isTerminalTab = isTerm || isAgent;
+                // The enhanced-input panel (Phase 6) is a docked pane whose toggle
+                // lives on this bar. Keep the bar visible while it's the focused
+                // pane, otherwise the toggle vanishes the moment the panel opens and
+                // you can't click it to collapse the panel again.
+                const bool isEnhancedInput = content.try_as<TerminalApp::EnhancedInputContent>() != nullptr;
+                isTerminalTab = isTerm || isAgent || isEnhancedInput;
             }
         }
         if (auto barRoot = BottomBarRoot())
@@ -2637,7 +2729,11 @@ namespace winrt::TerminalApp::implementation
             {
                 const bool isTerm = content.try_as<TerminalApp::TerminalPaneContent>() != nullptr;
                 const bool isAgent = content.try_as<TerminalApp::AgentPaneContent>() != nullptr;
-                isTerminalTab = isTerm || isAgent;
+                // Keep going when the enhanced-input panel is focused so the rest of
+                // this method still refreshes the toggle highlights (matches
+                // _UpdateBottomBarVisibility above).
+                const bool isEnhancedInput = content.try_as<TerminalApp::EnhancedInputContent>() != nullptr;
+                isTerminalTab = isTerm || isAgent || isEnhancedInput;
             }
         }
         if (!isTerminalTab)
@@ -2691,6 +2787,23 @@ namespace winrt::TerminalApp::implementation
         if (auto sessionsBtn = SessionToggleButton())
         {
             sessionsBtn.Background(sessionsLit ? kLitOverlay : kTransparent);
+        }
+
+        // Enhanced-input toggle (Phase 6): lit when the focused tab has an
+        // EnhancedInputContent pane open. Independent of the agent-pane state above.
+        if (auto eiBtn = EnhancedInputToggleButton())
+        {
+            bool eiOpen = false;
+            if (focusedTabImpl)
+            {
+                if (const auto rootPane = focusedTabImpl->GetRootPane())
+                {
+                    eiOpen = rootPane->WalkTree([](const std::shared_ptr<Pane>& p) -> bool {
+                        return p->GetContent().try_as<winrt::TerminalApp::EnhancedInputContent>() != nullptr;
+                    });
+                }
+            }
+            eiBtn.Background(eiOpen ? kLitOverlay : kTransparent);
         }
 
         // Swap the toggle icon to match the current pane position.
@@ -6167,6 +6280,112 @@ namespace winrt::TerminalApp::implementation
         return nullptr;
     }
 
+    // Route a host-layer Win32 OLE file drop (the elevated path, where the XAML
+    // DataPackage drop is refused by the shell) to either the enhanced-input panel
+    // under the cursor (files queued as attachments) or the active terminal (paths
+    // pasted as text). clientX/Y are pixels relative to the XAML island's top-left;
+    // paths arrive newline-joined. Runs on the UI thread.
+    void TerminalPage::HandleFileDrop(const int32_t clientX, const int32_t clientY, const winrt::hstring& newlineJoinedPaths)
+    {
+        if (newlineJoinedPaths.empty())
+        {
+            return;
+        }
+
+        // px → DIP so the point matches XAML host coordinates for hit-testing.
+        auto scale = 1.0;
+        if (const auto root{ XamlRoot() })
+        {
+            scale = root.RasterizationScale();
+        }
+        if (scale <= 0)
+        {
+            scale = 1.0;
+        }
+        const winrt::Windows::Foundation::Point point{ static_cast<float>(clientX / scale),
+                                                       static_cast<float>(clientY / scale) };
+
+        // Is an enhanced-input panel under the drop point? Walk up from each hit element;
+        // EnhancedInputContent::GetRoot() returns the UserControl itself, so it appears
+        // as an ancestor of whatever leaf (TextBox, Border, …) the point landed on.
+        TerminalApp::EnhancedInputContent targetPanel{ nullptr };
+        try
+        {
+            const auto hits{ VisualTreeHelper::FindElementsInHostCoordinates(point, *this) };
+            for (const auto& hit : hits)
+            {
+                DependencyObject node{ hit };
+                while (node)
+                {
+                    if (const auto panel{ node.try_as<TerminalApp::EnhancedInputContent>() })
+                    {
+                        targetPanel = panel;
+                        break;
+                    }
+                    node = VisualTreeHelper::GetParent(node);
+                }
+                if (targetPanel)
+                {
+                    break;
+                }
+            }
+        }
+        CATCH_LOG();
+
+        if (targetPanel)
+        {
+            winrt::get_self<EnhancedInputContent>(targetPanel)->IngestDroppedPaths(newlineJoinedPaths);
+            return;
+        }
+
+        // Otherwise paste the path(s) into the active terminal, matching conhost /
+        // TermControl: quote any path containing a space, separate multiple with a space.
+        const auto control{ _GetActiveControl() };
+        if (!control)
+        {
+            return;
+        }
+        std::wstring text;
+        std::wstring_view all{ newlineJoinedPaths };
+        size_t start{ 0 };
+        while (start <= all.size())
+        {
+            auto end{ all.find(L'\n', start) };
+            if (end == std::wstring_view::npos)
+            {
+                end = all.size();
+            }
+            auto line{ all.substr(start, end - start) };
+            start = end + 1;
+            if (!line.empty() && line.back() == L'\r')
+            {
+                line.remove_suffix(1);
+            }
+            if (line.empty())
+            {
+                continue;
+            }
+            if (!text.empty())
+            {
+                text.push_back(L' ');
+            }
+            if (line.find(L' ') != std::wstring_view::npos)
+            {
+                text.push_back(L'"');
+                text.append(line);
+                text.push_back(L'"');
+            }
+            else
+            {
+                text.append(line);
+            }
+        }
+        if (!text.empty())
+        {
+            control.SendInput(winrt::hstring{ text });
+        }
+    }
+
     CommandPalette TerminalPage::LoadCommandPalette()
     {
         if (const auto p = CommandPaletteElement())
@@ -7643,13 +7862,35 @@ namespace winrt::TerminalApp::implementation
     }
 
     // Method Description:
-    // - Paste text from the Windows Clipboard to the focused terminal
+    // - Paste from the Windows Clipboard to the focused terminal.
+    // - Normally this pastes text. But when the clipboard holds an image (e.g. a
+    //   screenshot) and no text, a plain text paste would find nothing and
+    //   silently do nothing. In that case we instead replay Alt+V to the focused
+    //   control. Alt+V is unbound in the terminal, so it passes straight through
+    //   to whatever app is running there — the agent's wta pane, or a CLI like
+    //   Claude Code — which reads the clipboard image directly, exactly as if the
+    //   user had pressed Alt+V. Text on the clipboard still pastes as text in
+    //   every pane, so Ctrl+V is unchanged for normal use.
     void TerminalPage::_PasteText()
     {
-        if (const auto& control{ _GetActiveControl() })
+        const auto control{ _GetActiveControl() };
+        if (!control)
         {
-            control.PasteTextFromClipboard();
+            return;
         }
+
+        if (clipboard::hasImageButNoText())
+        {
+            // VK_V = 0x56, its scan code = 0x2F. Send key-down then key-up so the
+            // Alt+V chord is delivered and released cleanly, matching a real
+            // keypress.
+            const ControlKeyStates altModifier{ ControlKeyStates::LeftAltPressed };
+            control.RawWriteKeyEvent(0x56, 0x2F, altModifier, true);
+            control.RawWriteKeyEvent(0x56, 0x2F, altModifier, false);
+            return;
+        }
+
+        control.PasteTextFromClipboard();
     }
 
     // Function Description:
@@ -8131,6 +8372,27 @@ namespace winrt::TerminalApp::implementation
             }
 
             content = *tasksContent;
+        }
+        else if (paneType == L"enhancedInput")
+        {
+            // Single-instance detection + the Alt+E / bottom-bar toggle live in
+            // _ToggleEnhancedInputPane (Phase 6); this branch just builds the content
+            // for that toggle's open path. Phase 2 wires the send channel:
+            // DispatchActionRequested forwards a SendInput action to the active
+            // control (MarkdownPaneContent pattern).
+            const auto& enhancedContent{ winrt::make_self<EnhancedInputContent>() };
+            enhancedContent->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
+            enhancedContent->DispatchActionRequested([weak = get_weak()](const auto& sender, const auto& actionAndArgs) {
+                if (const auto& page{ weak.get() })
+                {
+                    page->_actionDispatch->DoAction(sender, actionAndArgs);
+                }
+            });
+            if (const auto& termControl{ _GetActiveControl() })
+            {
+                enhancedContent->SetLastActiveControl(termControl);
+            }
+            content = *enhancedContent;
         }
         else if (paneType == L"x-markdown")
         {

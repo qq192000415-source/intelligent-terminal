@@ -17,6 +17,21 @@
     <ClCompile Include="Pane.LayoutSizeNode.cpp">
       <Filter>pane</Filter>
     </ClCompile>
+    <ClCompile Include="EnhancedInputContent.cpp">
+      <Filter>pane</Filter>
+    </ClCompile>
+    <ClCompile Include="EnhancedInput\TerminalSink.cpp">
+      <Filter>pane</Filter>
+    </ClCompile>
+    <ClCompile Include="EnhancedInput\AttachmentStore.cpp">
+      <Filter>pane</Filter>
+    </ClCompile>
+    <ClCompile Include="EnhancedInput\SkillScanner.cpp">
+      <Filter>pane</Filter>
+    </ClCompile>
+    <ClCompile Include="EnhancedInput\LocalStore.cpp">
+      <Filter>pane</Filter>
+    </ClCompile>
     <ClCompile Include="AppCommandlineArgs.cpp" />
     <ClCompile Include="Commandline.cpp" />
     <ClCompile Include="DebugTapConnection.cpp" />
@@ -62,6 +77,30 @@
     <ClInclude Include="LanguageProfileNotifier.h" />
     <ClInclude Include="WindowsPackageManagerFactory.h" />
     <ClInclude Include="TerminalSettingsCache.h" />
+    <ClInclude Include="EnhancedInputContent.h">
+      <Filter>pane</Filter>
+    </ClInclude>
+    <ClInclude Include="EnhancedInput\ITerminalSink.h">
+      <Filter>pane</Filter>
+    </ClInclude>
+    <ClInclude Include="EnhancedInput\TerminalSink.h">
+      <Filter>pane</Filter>
+    </ClInclude>
+    <ClInclude Include="EnhancedInput\CommandData.h">
+      <Filter>pane</Filter>
+    </ClInclude>
+    <ClInclude Include="EnhancedInput\AttachmentStore.h">
+      <Filter>pane</Filter>
+    </ClInclude>
+    <ClInclude Include="EnhancedInput\ComposerLogic.h">
+      <Filter>pane</Filter>
+    </ClInclude>
+    <ClInclude Include="EnhancedInput\SkillScanner.h">
+      <Filter>pane</Filter>
+    </ClInclude>
+    <ClInclude Include="EnhancedInput\LocalStore.h">
+      <Filter>pane</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Midl Include="AppLogic.idl">
@@ -119,7 +158,7 @@
     <Page Include="SuggestionsControl.xaml" />
     <Page Include="SnippetsPaneContent.xaml" />
     <Page Include="MarkdownPaneContent.xaml" />
-    <Page Include="AgentPaneContent.xaml" />
+    <Page Include="EnhancedInputContent.xaml" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="app">

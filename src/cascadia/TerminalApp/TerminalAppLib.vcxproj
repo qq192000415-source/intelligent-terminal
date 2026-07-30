@@ -80,6 +80,9 @@
     <Page Include="MarkdownPaneContent.xaml">
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="EnhancedInputContent.xaml">
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="AgentPaneContent.xaml">
       <SubType>Designer</SubType>
     </Page>
@@ -179,6 +182,16 @@
     <ClInclude Include="SnippetsPaneContent.h">
       <DependentUpon>SnippetsPaneContent.xaml</DependentUpon>
     </ClInclude>
+    <ClInclude Include="EnhancedInputContent.h">
+      <DependentUpon>EnhancedInputContent.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="EnhancedInput\ITerminalSink.h" />
+    <ClInclude Include="EnhancedInput\TerminalSink.h" />
+    <ClInclude Include="EnhancedInput\CommandData.h" />
+    <ClInclude Include="EnhancedInput\AttachmentStore.h" />
+    <ClInclude Include="EnhancedInput\ComposerLogic.h" />
+    <ClInclude Include="EnhancedInput\SkillScanner.h" />
+    <ClInclude Include="EnhancedInput\LocalStore.h" />
     <ClInclude Include="SettingsPaneContent.h">
       <DependentUpon>TerminalPaneContent.idl</DependentUpon>
     </ClInclude>
@@ -303,6 +316,14 @@
     <ClCompile Include="SnippetsPaneContent.cpp">
       <DependentUpon>SnippetsPaneContent.xaml</DependentUpon>
     </ClCompile>
+    <ClCompile Include="EnhancedInputContent.cpp">
+      <DependentUpon>EnhancedInputContent.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </ClCompile>
+    <ClCompile Include="EnhancedInput\TerminalSink.cpp" />
+    <ClCompile Include="EnhancedInput\AttachmentStore.cpp" />
+    <ClCompile Include="EnhancedInput\SkillScanner.cpp" />
+    <ClCompile Include="EnhancedInput\LocalStore.cpp" />
     <ClCompile Include="SettingsPaneContent.cpp">
       <DependentUpon>TerminalPaneContent.idl</DependentUpon>
     </ClCompile>
@@ -394,6 +415,10 @@
     </Midl>
     <Midl Include="MarkdownPaneContent.idl">
       <DependentUpon>MarkdownPaneContent.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Midl>
+    <Midl Include="EnhancedInputContent.idl">
+      <DependentUpon>EnhancedInputContent.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Midl>
     <Midl Include="AgentPaneContent.idl">

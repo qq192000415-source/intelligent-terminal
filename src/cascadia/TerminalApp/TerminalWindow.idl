@@ -151,6 +151,10 @@ namespace TerminalApp
         void AttachContent(String content, UInt32 tabIndex);
         void SendContentToOther(RequestReceiveContentArgs args);
 
+        // Host-layer Win32 OLE drop (elevated path). x/y are client pixels
+        // relative to the XAML island; paths are newline-joined.
+        void HandleFileDrop(Int32 x, Int32 y, String paths);
+
         // Protocol bridge
         UInt32 TabCount { get; };
     }

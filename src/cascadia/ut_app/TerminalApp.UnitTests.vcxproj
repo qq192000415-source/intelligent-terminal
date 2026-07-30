@@ -23,6 +23,10 @@
   <ItemGroup>
     <ClCompile Include="JsonUtilsTests.cpp" />
     <ClCompile Include="FzfTests.cpp" />
+    <ClCompile Include="EnhancedInputLogicTests.cpp" />
+    <ClCompile Include="LocalStoreTests.cpp" />
+    <ClCompile Include="SkillScannerTests.cpp" />
+    <ClCompile Include="AttachmentStoreTests.cpp" />
     <ClCompile Include="AgentHooksStatusTests.cpp" />
     <ClCompile Include="BoundedDispatchQueueTests.cpp" />
     <ClCompile Include="CustomAgentIdTests.cpp" />

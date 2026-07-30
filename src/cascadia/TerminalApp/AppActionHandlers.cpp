@@ -285,6 +285,17 @@ namespace winrt::TerminalApp::implementation
                 return;
             }
 
+            // Enhanced-input panel (Phase 6): Alt+E binds to this splitPane action,
+            // but the panel is a single-instance toggle — pressing it again collapses
+            // it rather than stacking a second pane. Route to the shared toggle so the
+            // keybinding and the bottom-bar button behave identically.
+            if (const auto& contentArgs{ realArgs.ContentArgs() }; contentArgs && contentArgs.Type() == L"enhancedInput")
+            {
+                _ToggleEnhancedInputPane();
+                args.Handled(true);
+                return;
+            }
+
             const auto& duplicateFromTab{ realArgs.SplitMode() == SplitType::Duplicate ? _GetFocusedTab() : nullptr };
 
             const auto& activeTab{ _senderOrFocusedTab(sender) };

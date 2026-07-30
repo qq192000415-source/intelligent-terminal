@@ -46,6 +46,10 @@ public:
 
     void SetSnapDimensionCallback(std::function<float(bool widthOrHeight, float dimension)> pfn) noexcept;
 
+    // Forwards a host-layer OLE file drop (elevated path) to the app: client-pixel
+    // drop point + the dropped paths. See _registerFileDropTarget.
+    void SetFileDropHandler(std::function<void(const til::point&, const std::vector<std::wstring>&)> pfn) noexcept;
+
     void FocusModeChanged(const bool focusMode);
     void FullscreenChanged(const bool fullscreen);
     void SetAlwaysOnTop(const bool alwaysOnTop);
@@ -102,6 +106,14 @@ protected:
 
     std::function<void(const HWND, const til::rect&)> _pfnCreateCallback;
     std::function<float(bool, float)> _pfnSnapDimensionCallback;
+    std::function<void(const til::point&, const std::vector<std::wstring>&)> _pfnFileDropCallback;
+
+    // Classic Win32 OLE drop target, registered on _interopWindowHandle when elevated
+    // (the XAML DataPackage drop path is refused inside elevated processes). Stored as
+    // IUnknown to keep oleidl.h out of this header; cast to IDropTarget in the .cpp.
+    winrt::com_ptr<::IUnknown> _dropTarget{ nullptr };
+    bool _oleInitialized{ false };
+    void _registerDragDrop();
 
     void _HandleCreateWindow(const WPARAM wParam, const LPARAM lParam) noexcept;
     [[nodiscard]] LRESULT _OnSizing(const WPARAM wParam, const LPARAM lParam);

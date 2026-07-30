@@ -77,6 +77,30 @@ AppHost::AppHost(WindowEmperor* manager, const winrt::TerminalApp::AppLogic& log
     _windowCallbacks.WindowMoved = _window->WindowMoved({ this, &AppHost::_WindowMoved });
     _windowCallbacks.ShouldExitFullscreen = _window->ShouldExitFullscreen({ &_windowLogic, &winrt::TerminalApp::TerminalWindow::RequestExitFullscreen });
 
+    // Host-layer Win32 OLE drop receiver (elevated-only). Under elevation the XAML
+    // DataPackage drop path is refused by the shell broker, so files/images can't be
+    // dropped onto the terminal or the enhanced panel. The IslandWindow registers a
+    // classic IDropTarget over the whole client area and calls back here with the drop
+    // point (client px) + paths; forward to the window logic to hit-test and route.
+    _window->SetFileDropHandler([this](const til::point& clientPoint, const std::vector<std::wstring>& paths) {
+        if (!_windowLogic || paths.empty())
+        {
+            return;
+        }
+        std::wstring joined;
+        for (const auto& p : paths)
+        {
+            if (!joined.empty())
+            {
+                joined.push_back(L'\n');
+            }
+            joined.append(p);
+        }
+        _windowLogic.HandleFileDrop(static_cast<int32_t>(clientPoint.x),
+                                    static_cast<int32_t>(clientPoint.y),
+                                    winrt::hstring{ joined });
+    });
+
     _window->MakeWindow();
 
     // Does window creation mean the window was activated (WM_ACTIVATE)? No.

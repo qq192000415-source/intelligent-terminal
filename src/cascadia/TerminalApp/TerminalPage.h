@@ -169,6 +169,10 @@ namespace winrt::TerminalApp::implementation
         void TitlebarClicked();
         void WindowVisibilityChanged(const bool showOrHide);
 
+        // Host-layer Win32 OLE drop routing (elevated path). Coordinates are pixels
+        // relative to the XAML island client origin; paths are newline-joined.
+        void HandleFileDrop(const int32_t xPx, const int32_t yPx, const winrt::hstring& newlineJoinedPaths);
+
         float CalcSnappedDimension(const bool widthOrHeight, const float dimension) const;
 
         winrt::hstring ApplicationDisplayName();
@@ -391,6 +395,12 @@ namespace winrt::TerminalApp::implementation
                                          const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
         void _DiagnosticsButtonOnClick(const winrt::Windows::Foundation::IInspectable& sender,
                                        const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
+        // Enhanced-input panel toggle (Phase 6). The bottom-bar button and the
+        // Alt+E keybinding (via _HandleSplitPane) both route here: closes the
+        // focused tab's EnhancedInputContent pane if present, else opens one.
+        void _EnhancedInputToggleButtonOnClick(const winrt::Windows::Foundation::IInspectable& sender,
+                                               const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
+        void _ToggleEnhancedInputPane();
         // Recomputes the bottom bar's visibility / toggle-lit / diagnostics
         // affordance from the active tab's AgentPaneContent (or absence
         // thereof). Called on tab switch and whenever an AgentPaneContent

@@ -1389,7 +1389,17 @@ bool Pane::RepositionAgentPane(SplitDirection splitDirection)
     const bool secondIsAgent = _secondChild && _secondChild->_isAgentPane;
     if (!firstIsAgent && !secondIsAgent)
     {
-        return false;
+        // The agent pane isn't one of our direct children. It may be nested
+        // deeper in the tree — e.g. when the enhanced-input panel is docked as
+        // the outermost right column, the agent lives inside the left terminal
+        // subtree (VSplit( HSplit(term/agent) | enhancedInput )). Recurse so a
+        // runtime AgentPanePosition change still finds and repositions it.
+        // There's exactly one agent pane per tab, so at most one child hits.
+        if (_firstChild && _firstChild->RepositionAgentPane(splitDirection))
+        {
+            return true;
+        }
+        return _secondChild && _secondChild->RepositionAgentPane(splitDirection);
     }
 
     const auto newSplitState = _convertAutomaticOrDirectionalSplitState(splitDirection);
@@ -1744,6 +1754,19 @@ void Pane::_CloseChild(const bool closeFirst)
         // Propagate the new borders down to the children.
         _borders = remainingBorders;
         _ApplySplitDefinitions();
+
+        // Re-apply any hidden state. The grid rebuild above adds both children
+        // unconditionally; if a direct child carries the _hidden flag (e.g. a
+        // pre-warmed stashed agent pane), collapse the grid back to a single
+        // track — same pattern used in Tab::SplitPaneAtRoot.
+        if (_firstChild && _firstChild->_hidden)
+        {
+            HidePane(_firstChild);
+        }
+        else if (_secondChild && _secondChild->_hidden)
+        {
+            HidePane(_secondChild);
+        }
 
         // If our child had focus and closed, just transfer to the first remaining
         // child

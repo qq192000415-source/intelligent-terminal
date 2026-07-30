@@ -4,11 +4,14 @@
 #include "pch.h"
 #include "IslandWindow.h"
 #include "../types/inc/Viewport.hpp"
+#include "../types/inc/utils.hpp"
 #include "resource.h"
 #include "icon.h"
 #include <dwmapi.h>
 #include <TerminalThemeHelpers.h>
 #include <CoreWindow.h>
+#include <ole2.h>
+#include <oleidl.h>
 
 extern "C" IMAGE_DOS_HEADER __ImageBase;
 
@@ -22,6 +25,129 @@ using namespace winrt::Microsoft::Terminal::Control;
 using namespace winrt::Microsoft::Terminal;
 using namespace ::Microsoft::Console::Types;
 using VirtualKeyModifiers = winrt::Windows::System::VirtualKeyModifiers;
+
+namespace
+{
+    // A classic Win32 OLE drop target for the XAML-island HWND.
+    //
+    // Windows Terminal renders with XAML Islands, whose WinRT DataPackage drop path
+    // is refused by the shell inside an elevated process — so neither the terminal
+    // nor our enhanced-input panel receive dropped files when running as admin
+    // (clipboard paste still works; that path doesn't go through the drag broker).
+    // Registering our own IDropTarget on the island HWND — exactly the classic-OLE
+    // mechanism Chromium/WebView2 use internally — restores drag-drop when the drag
+    // source is at the same integrity level (e.g. an elevated Explorer). Only files
+    // (CF_HDROP) are accepted; other payloads report DROPEFFECT_NONE so the cursor
+    // shows "no-drop". The screen-space drop point is converted to island-client
+    // pixels and forwarded so the app layer can hit-test panel-vs-terminal.
+    struct WinDropTarget : winrt::implements<WinDropTarget, ::IDropTarget>
+    {
+        WinDropTarget(HWND island,
+                      std::function<void(const til::point&, const std::vector<std::wstring>&)> onDrop) :
+            _island{ island },
+            _onDrop{ std::move(onDrop) }
+        {
+        }
+
+        HRESULT __stdcall DragEnter(::IDataObject* obj, DWORD /*keyState*/, POINTL /*pt*/, DWORD* effect) noexcept override
+        {
+            _hasFiles = _containsFiles(obj);
+            *effect = _hasFiles ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+            return S_OK;
+        }
+
+        HRESULT __stdcall DragOver(DWORD /*keyState*/, POINTL /*pt*/, DWORD* effect) noexcept override
+        {
+            *effect = _hasFiles ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+            return S_OK;
+        }
+
+        HRESULT __stdcall DragLeave() noexcept override
+        {
+            _hasFiles = false;
+            return S_OK;
+        }
+
+        HRESULT __stdcall Drop(::IDataObject* obj, DWORD /*keyState*/, POINTL pt, DWORD* effect) noexcept override
+        {
+            _hasFiles = false;
+            *effect = DROPEFFECT_NONE;
+
+            auto paths = _extractPaths(obj);
+            if (paths.empty())
+            {
+                return S_OK;
+            }
+            *effect = DROPEFFECT_COPY;
+
+            // pt is in screen pixels; convert to island-client pixels for hit-testing.
+            POINT client{ pt.x, pt.y };
+            ScreenToClient(_island, &client);
+            if (_onDrop)
+            {
+                _onDrop(til::point{ client.x, client.y }, paths);
+            }
+            return S_OK;
+        }
+
+    private:
+        static bool _containsFiles(::IDataObject* obj) noexcept
+        {
+            if (!obj)
+            {
+                return false;
+            }
+            FORMATETC fmt{ CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+            return obj->QueryGetData(&fmt) == S_OK;
+        }
+
+        static std::vector<std::wstring> _extractPaths(::IDataObject* obj)
+        {
+            std::vector<std::wstring> paths;
+            if (!obj)
+            {
+                return paths;
+            }
+            FORMATETC fmt{ CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+            STGMEDIUM medium{};
+            if (FAILED(obj->GetData(&fmt, &medium)))
+            {
+                return paths;
+            }
+            const auto releaseMedium = wil::scope_exit([&]() { ReleaseStgMedium(&medium); });
+
+            const auto drop = static_cast<HDROP>(GlobalLock(medium.hGlobal));
+            if (!drop)
+            {
+                return paths;
+            }
+            const auto unlock = wil::scope_exit([&]() { GlobalUnlock(medium.hGlobal); });
+
+            const auto count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+            paths.reserve(count);
+            for (UINT i = 0; i < count; ++i)
+            {
+                const auto needed = DragQueryFileW(drop, i, nullptr, 0);
+                if (needed == 0)
+                {
+                    continue;
+                }
+                std::wstring path(needed, L'\0');
+                const auto copied = DragQueryFileW(drop, i, path.data(), needed + 1);
+                if (copied > 0)
+                {
+                    path.resize(copied);
+                    paths.emplace_back(std::move(path));
+                }
+            }
+            return paths;
+        }
+
+        HWND _island{ nullptr };
+        std::function<void(const til::point&, const std::vector<std::wstring>&)> _onDrop;
+        bool _hasFiles{ false };
+    };
+}
 
 #define XAML_HOSTING_WINDOW_CLASS_NAME L"CASCADIA_HOSTING_WINDOW_CLASS"
 #define IDM_SYSTEM_MENU_BEGIN 0x1000
@@ -95,6 +221,23 @@ void IslandWindow::Close()
     // message loop, where it'll end up asking XAML something that XAML is no
     // longer able to answer.
     SetWindowLongPtr(_window.get(), GWLP_USERDATA, 0);
+
+    // Tear down our classic Win32 OLE drop target (elevated drag-drop path).
+    // Revoke while the interop HWND is still alive, then balance the
+    // OleInitialize we did in _registerDragDrop.
+    if (_dropTarget)
+    {
+        if (_interopWindowHandle)
+        {
+            RevokeDragDrop(_interopWindowHandle);
+        }
+        _dropTarget = nullptr;
+    }
+    if (_oleInitialized)
+    {
+        OleUninitialize();
+        _oleInitialized = false;
+    }
 
     if (_source)
     {
@@ -178,6 +321,52 @@ void IslandWindow::MakeWindow() noexcept
 void IslandWindow::SetCreateCallback(std::function<void(const HWND, const til::rect&)> pfn) noexcept
 {
     _pfnCreateCallback = pfn;
+}
+
+void IslandWindow::SetFileDropHandler(std::function<void(const til::point&, const std::vector<std::wstring>&)> pfn) noexcept
+{
+    _pfnFileDropCallback = pfn;
+}
+
+// Method Description:
+// - Registers a classic Win32 OLE IDropTarget on the XAML island child HWND so
+//   files/images dropped from Explorer land as attachments (panel) or pasted
+//   paths (terminal). This exists ONLY for the elevated case: XAML Islands' own
+//   WinRT DataPackage drop path is refused by the shell inside an elevated
+//   process, so both the terminal and the enhanced panel would otherwise get
+//   nothing. Classic OLE works peer-to-peer at equal integrity (same mechanism
+//   Chromium/WebView2 use), so we revoke XAML's (dead) target and install ours.
+// - No-op when not elevated: there XAML's native drag/drop works and also drives
+//   tab tear-out, which we must not clobber.
+void IslandWindow::_registerDragDrop()
+{
+    if (!::Microsoft::Console::Utils::IsRunningElevated())
+    {
+        return;
+    }
+    if (!_interopWindowHandle || !_pfnFileDropCallback || _dropTarget)
+    {
+        return;
+    }
+
+    // RegisterDragDrop requires OLE (not just CoInitializeEx) on this thread.
+    // It's refcounted and safe to layer onto the STA the UI thread already has;
+    // balanced by OleUninitialize in Close().
+    if (SUCCEEDED(OleInitialize(nullptr)))
+    {
+        _oleInitialized = true;
+    }
+
+    auto target = winrt::make_self<WinDropTarget>(_interopWindowHandle, _pfnFileDropCallback);
+
+    // XAML has already claimed this HWND as its own drop target; revoke it (it's
+    // non-functional under elevation anyway) so RegisterDragDrop doesn't fail
+    // with DRAGDROP_E_ALREADYREGISTERED.
+    ::RevokeDragDrop(_interopWindowHandle);
+    if (SUCCEEDED(::RegisterDragDrop(_interopWindowHandle, target.as<::IDropTarget>().get())))
+    {
+        _dropTarget = target.as<::IUnknown>();
+    }
 }
 
 // Method Description:
@@ -805,6 +994,10 @@ void IslandWindow::OnAppInitialized()
     // Do a quick resize to force the island to paint
     const auto size = GetPhysicalSize();
     OnSize(size.width, size.height);
+
+    // Install our host-layer OLE drop target now that XAML has settled, so ours
+    // wins the registration on the island HWND (elevated-only; no-op otherwise).
+    _registerDragDrop();
 }
 
 // Method Description:

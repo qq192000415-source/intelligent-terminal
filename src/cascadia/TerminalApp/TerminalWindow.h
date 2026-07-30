@@ -148,6 +148,8 @@ namespace winrt::TerminalApp::implementation
         void AttachContent(winrt::hstring content, uint32_t tabIndex);
         void SendContentToOther(winrt::TerminalApp::RequestReceiveContentArgs args);
 
+        void HandleFileDrop(int32_t x, int32_t y, const winrt::hstring& paths);
+
         // Protocol bridge
         uint32_t TabCount() const;
 

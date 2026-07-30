@@ -117,9 +117,12 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
+            <!-- Left group: the two dockable-panel toggles (agent + enhanced input) -->
+            <StackPanel Grid.Column="0"
+                        Orientation="Horizontal"
+                        Spacing="2">
             <!-- Button 1: AI toggle (dock/collapse bottom pane) -->
             <Button x:Name="AgentToggleButton"
-                    Grid.Column="0"
                     Width="32"
                     Height="32"
                     Padding="0"
@@ -155,6 +158,40 @@
                               Data="M11.1667 0C12.3633 0 13.3333 0.970047 13.3333 2.16667V8.5C13.3333 9.6966 12.3633 10.6667 11.1667 10.6667H2.16667C0.970047 10.6667 0 9.6966 0 8.5V2.16667C0 0.970047 0.970047 0 2.16667 0H11.1667ZM2.16667 1C1.52233 1 1 1.52233 1 2.16667V8.5C1 9.14433 1.52233 9.66667 2.16667 9.66667H8.33333V1H2.16667Z" />
                 </Grid>
             </Button>
+
+            <!-- Enhanced-input panel toggle (Phase 6). Alt+E also toggles it.
+                 Uses the panel's own pane glyph (E756) for a recognizable
+                 "open the input panel" affordance; lit when the pane is open
+                 (background driven by _UpdateBottomBarState). -->
+            <Button x:Name="EnhancedInputToggleButton"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    Click="_EnhancedInputToggleButtonOnClick">
+                <ToolTipService.ToolTip>
+                    <ToolTip>
+                        <StackPanel>
+                            <TextBlock Text="增强输入面板"
+                                       FontFamily="Segoe UI Variable"
+                                       FontSize="12"
+                                       FontWeight="Normal"
+                                       LineHeight="16" />
+                            <TextBlock Text="Alt+E"
+                                       FontFamily="Segoe UI Variable"
+                                       FontSize="12"
+                                       FontWeight="Normal"
+                                       LineHeight="16"
+                                       Opacity="0.7" />
+                        </StackPanel>
+                    </ToolTip>
+                </ToolTipService.ToolTip>
+                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                          FontSize="16"
+                          Glyph="&#xE756;" />
+            </Button>
+            </StackPanel>
 
             <!-- Button 2: Diagnostics / Warning — clickable once a fix is armed.
                  Starts Collapsed: the group only appears once the active tab's

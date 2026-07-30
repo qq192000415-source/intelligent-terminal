@@ -794,31 +794,86 @@ namespace winrt::TerminalApp::implementation
         });
         pane->EnableBroadcast(_tabStatus.IsInputBroadcastActive());
 
-        // Save the root's pane ID before the split clears it. If the root
+        // Resolve the node to actually split. The enhanced-input panel (Alt+E)
+        // is a full-height, right-docked companion that must remain the
+        // OUTERMOST right column. When it's already docked as a direct child of
+        // the root split, dock the new pane (e.g. the agent pane) into the
+        // OTHER child — the terminal region — so the enhanced-input panel keeps
+        // its full height instead of being squeezed into a corner. Otherwise
+        // split the true root (the panel-first, agent-first, and single-
+        // terminal cases all converge on the same final tree:
+        // VSplit( <terminals + agent> | enhancedInput )).
+        std::shared_ptr<Pane> target = _rootPane;
+        if (_rootPane && !_rootPane->_IsLeaf())
+        {
+            const auto isEnhancedInput = [](const std::shared_ptr<Pane>& p) {
+                return p && p->_IsLeaf() &&
+                       p->GetContent().try_as<winrt::TerminalApp::EnhancedInputContent>() != nullptr;
+            };
+            if (isEnhancedInput(_rootPane->_firstChild))
+            {
+                target = _rootPane->_secondChild;
+            }
+            else if (isEnhancedInput(_rootPane->_secondChild))
+            {
+                target = _rootPane->_firstChild;
+            }
+        }
+
+        // Save the target's pane ID before the split clears it. If the target
         // was a leaf, we need to transfer the ID to the new wrapper pane so
         // that content event handlers (keyed by pane ID) continue to work.
-        const auto rootPaneId = _rootPane->Id();
+        const auto targetPaneId = target->Id();
 
-        // AttachPane splits the root pane in-place: the existing tree becomes
-        // _firstChild and the new pane becomes _secondChild. Because _rootPane
-        // is modified in-place, Content() (which points to _rootPane->GetRootElement())
-        // remains valid without any re-parenting.
-        auto originalTree = _rootPane->AttachPane(pane, splitType);
+        // AttachPane splits the target in-place: the existing subtree becomes
+        // _firstChild and the new pane becomes _secondChild. The node's root
+        // Grid object is preserved (mutated in place, never reassigned), so the
+        // parent's border child pointer — and Content() at the root — remain
+        // valid without any re-parenting.
+        auto originalTree = target->AttachPane(pane, splitType);
 
-        // The split created a new wrapper pane for the original tree. Attach
+        // The split created a new wrapper pane for the original subtree. Attach
         // Tab event handlers so that focus changes are tracked correctly —
         // without this, clicking the original pane won't update _activePane.
         _AttachEventHandlersToPane(originalTree);
-        if (originalTree->_IsLeaf() && rootPaneId)
+        if (originalTree->_IsLeaf() && targetPaneId)
         {
-            originalTree->Id(rootPaneId.value());
+            originalTree->Id(targetPaneId.value());
+        }
+
+        // If the wrapped subtree has a stashed (hidden) pane as a DIRECT child
+        // — e.g. the pre-warmed agent pane every tab stashes at startup, so the
+        // tree is HSplit(terminal / agent[hidden]) before this dock — then
+        // _Split just rebuilt this wrapper's grid as a normal two-track split,
+        // which visually REVIVES that hidden pane (the multi-arg Pane ctor
+        // renders both children unconditionally, ignoring _hidden). The _hidden
+        // flag still rides on the child Pane, so re-apply HidePane to collapse
+        // the wrapper's grid back to the single visible track. Only a *direct*
+        // child needs this: a pane hidden deeper down keeps its own collapsed
+        // sub-grid, which _Split never touched.
+        if (!originalTree->_IsLeaf())
+        {
+            std::shared_ptr<Pane> hiddenChild{ nullptr };
+            if (originalTree->_firstChild && originalTree->_firstChild->_hidden)
+            {
+                hiddenChild = originalTree->_firstChild;
+            }
+            else if (originalTree->_secondChild && originalTree->_secondChild->_hidden)
+            {
+                hiddenChild = originalTree->_secondChild;
+            }
+            if (hiddenChild)
+            {
+                originalTree->HidePane(hiddenChild);
+            }
         }
 
         // Redirect active-pane tracking back into the original tree.
-        // AttachPane mutates _rootPane in place: when the old root was a
-        // single leaf, _activePane pointed at that Pane object, which is
-        // now a non-leaf parent — causing Tab::_GetActiveTitle() to return
-        // "Multiple panes". Note: we deliberately do NOT restore XAML
+        // AttachPane mutates the target node in place: when that node was a
+        // single leaf and happened to be the active pane, _activePane pointed
+        // at that Pane object, which is now a non-leaf parent — causing
+        // Tab::_GetActiveTitle() to return "Multiple panes". Note: we
+        // deliberately do NOT restore XAML
         // focus here. Callers that hide the new pane (HidePane) will
         // re-parent the visible subtree, wiping any focus we set. Focus
         // restoration is the caller's responsibility and must happen after
@@ -1554,6 +1609,10 @@ namespace winrt::TerminalApp::implementation
                     taskPane.SetLastActiveControl(termControl);
                 }
                 else if (const auto& taskPane{ p->GetContent().try_as<MarkdownPaneContent>() })
+                {
+                    taskPane.SetLastActiveControl(termControl);
+                }
+                else if (const auto& taskPane{ p->GetContent().try_as<winrt::TerminalApp::EnhancedInputContent>() })
                 {
                     taskPane.SetLastActiveControl(termControl);
                 }
