@@ -1,0 +1,16 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+import "IPaneContent.idl";
+
+namespace TerminalApp
+{
+    [default_interface] runtimeclass EnhancedInputContent : Windows.UI.Xaml.Controls.UserControl,
+                                                            IPaneContent
+    {
+        EnhancedInputContent();
+        void SetLastActiveControl(Microsoft.Terminal.Control.TermControl control);
+
+        event Windows.Foundation.TypedEventHandler<Object, Microsoft.Terminal.Settings.Model.ActionAndArgs> DispatchActionRequested;
+    }
+}
