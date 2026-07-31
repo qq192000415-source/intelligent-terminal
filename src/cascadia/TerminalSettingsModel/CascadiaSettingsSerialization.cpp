@@ -401,11 +401,13 @@ void SettingsLoader::FindFragmentsAndMergeIntoUserSettings(bool generateExtensio
     try
     {
         const auto catalog = AppExtensionCatalog::Open(AppExtensionHostName);
+#ifdef NTDDI_WIN11_GE
         if (auto catalog2{ catalog.try_as<IAppExtensionCatalog2>() })
         {
             extensions = catalog2.FindAll();
         }
         else
+#endif
         {
             extensions = extractValueFromTaskWithoutMainThreadAwait(catalog.FindAllAsync());
         }
@@ -431,6 +433,7 @@ void SettingsLoader::FindFragmentsAndMergeIntoUserSettings(bool generateExtensio
         }
 
         winrt::hstring publicFolderPath;
+#ifdef NTDDI_WIN11_GE
         if (auto ext3{ ext.try_as<IAppExtension3>() })
         {
             // Windows 11 24H2 and above support a much faster, much less
@@ -444,6 +447,7 @@ void SettingsLoader::FindFragmentsAndMergeIntoUserSettings(bool generateExtensio
             }
         }
         else
+#endif
         {
             // Likewise, getting the public folder from an extension is an async operation.
             auto foundFolder = extractValueFromTaskWithoutMainThreadAwait(ext.GetPublicFolderAsync());
