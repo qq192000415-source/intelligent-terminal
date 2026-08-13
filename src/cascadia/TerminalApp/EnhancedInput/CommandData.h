@@ -31,7 +31,7 @@ namespace winrt::TerminalApp::implementation
         { L"/compact", L"压缩对话", L"将对话历史压缩摘要，在对话过长时节省 token，保留关键上下文继续工作",                         false },
         { L"/cost",    L"查看费用", L"显示本次会话消耗的 token 数量和对应的 API 费用统计",                                         false },
         { L"/status",  L"查看状态", L"显示当前会话的状态信息，包括使用的模型、上下文长度、工具配置等",                               false },
-        { L"/resume",  L"恢复对话", L"恢复上一次中断的对话，可以继续之前未完成的任务或查看历史记录",                                false },
+        { L"/resume",  L"恢复对话", L"打开当前目录对话历史列表中，相同的对话",                                                   false },
     };
 
     inline constexpr CommandEntry kGroupModel[] = {
@@ -64,11 +64,22 @@ namespace winrt::TerminalApp::implementation
         { L"/logout", L"退出", L"退出当前登录状态，清除本地保存的认证信息",                               false },
     };
 
+    // 6 CLI session-restore commands (from user XLS 2026-08-12).
+    inline constexpr CommandEntry kGroupSessionRestore[] = {
+        { L"claude --continue",        L"续接对话",   L"恢复当前目录中的最后一次会话记录",                                        false },
+        { L"claude --resume",          L"会话列表",   L"打开会话选择列表",                                                        false },
+        { L"claude --resume <name>",   L"指定会话",   L"直接恢复指定的会话",                                                      false },
+        { L"claude --from-pr <number>",L"PR关联会话", L"打开会话选择列表，筛选提取与指定 PR 相关代码关联的历史会话",                false },
+        { L"claude -c",                L"续接(简)",   L"打开当前目录最后一次对话记录",                                            false },
+        { L"claude -r",                L"历史列表",   L"打开当前目录对话历史列表中，相同的对话记录",                               false },
+    };
+
     inline constexpr CommandGroup kCommandGroups[] = {
-        { L"对话管理",   kGroupConversation },
-        { L"模型与设置", kGroupModel        },
-        { L"项目",       kGroupProject      },
-        { L"记忆与工具", kGroupMemory       },
-        { L"账号",       kGroupAccount      },
+        { L"对话管理",   kGroupConversation   },
+        { L"会话恢复",   kGroupSessionRestore },
+        { L"模型与设置", kGroupModel          },
+        { L"项目",       kGroupProject        },
+        { L"记忆与工具", kGroupMemory         },
+        { L"账号",       kGroupAccount        },
     };
 }

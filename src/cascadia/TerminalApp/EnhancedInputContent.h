@@ -119,6 +119,9 @@ namespace winrt::TerminalApp::implementation
         void _onCustomCardPointerExited(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs&);
         // ✕ on a card deletes that command (index in Tag), persists, and rebuilds.
         void _onDeleteCustomClick(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        // ↑/↓ on a custom card swaps it with its neighbor, persists, and rebuilds.
+        void _onMoveUpCustomClick(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onMoveDownCustomClick(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
 
         // Inline add form: the "+ 添加" card toggles CustomForm visible; Confirm
         // validates a non-empty command, appends, persists, and rebuilds; Cancel hides.

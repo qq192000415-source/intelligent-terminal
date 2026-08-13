@@ -371,7 +371,29 @@ namespace winrt::TerminalApp::implementation
             card.PointerEntered({ this, &EnhancedInputContent::_onCustomCardPointerEntered });
             card.PointerExited({ this, &EnhancedInputContent::_onCustomCardPointerExited });
 
-            // Delete ✕ (right).
+            // ↑ move-up button (disabled for the first card).
+            WUX::Controls::Button up{};
+            up.Content(winrt::box_value(winrt::hstring{ L"↑" }));
+            up.FontSize(11);
+            up.Padding({ 8, 6, 8, 6 });
+            up.VerticalAlignment(WUX::VerticalAlignment::Stretch);
+            up.IsEnabled(i > 0);
+            up.Tag(winrt::box_value(static_cast<uint64_t>(i)));
+            up.Click({ this, &EnhancedInputContent::_onMoveUpCustomClick });
+            WUXC::ToolTipService::SetToolTip(up, winrt::box_value(winrt::hstring{ L"上移" }));
+
+            // ↓ move-down button (disabled for the last card).
+            WUX::Controls::Button dn{};
+            dn.Content(winrt::box_value(winrt::hstring{ L"↓" }));
+            dn.FontSize(11);
+            dn.Padding({ 8, 6, 8, 6 });
+            dn.VerticalAlignment(WUX::VerticalAlignment::Stretch);
+            dn.IsEnabled(i + 1 < _customCommands.size());
+            dn.Tag(winrt::box_value(static_cast<uint64_t>(i)));
+            dn.Click({ this, &EnhancedInputContent::_onMoveDownCustomClick });
+            WUXC::ToolTipService::SetToolTip(dn, winrt::box_value(winrt::hstring{ L"下移" }));
+
+            // Delete ✕ (rightmost).
             WUX::Controls::Button del{};
             del.Content(winrt::box_value(winrt::hstring{ L"✕" }));
             del.FontSize(11);
@@ -381,17 +403,28 @@ namespace winrt::TerminalApp::implementation
             del.Click({ this, &EnhancedInputContent::_onDeleteCustomClick });
             WUXC::ToolTipService::SetToolTip(del, winrt::box_value(winrt::hstring{ L"删除" }));
 
+            // Layout: [card(stretch)] [↑] [↓] [✕]
             WUX::Controls::Grid rowGrid{};
             WUX::Controls::ColumnDefinition cc0{};
             WUX::Controls::ColumnDefinition cc1{};
+            WUX::Controls::ColumnDefinition cc2{};
+            WUX::Controls::ColumnDefinition cc3{};
             cc0.Width(WUX::GridLengthHelper::FromValueAndType(1, WUX::GridUnitType::Star));
             cc1.Width(WUX::GridLengthHelper::Auto());
+            cc2.Width(WUX::GridLengthHelper::Auto());
+            cc3.Width(WUX::GridLengthHelper::Auto());
             rowGrid.ColumnDefinitions().Append(cc0);
             rowGrid.ColumnDefinitions().Append(cc1);
-            rowGrid.ColumnSpacing(6);
+            rowGrid.ColumnDefinitions().Append(cc2);
+            rowGrid.ColumnDefinitions().Append(cc3);
+            rowGrid.ColumnSpacing(4);
             WUX::Controls::Grid::SetColumn(card, 0);
-            WUX::Controls::Grid::SetColumn(del, 1);
+            WUX::Controls::Grid::SetColumn(up,   1);
+            WUX::Controls::Grid::SetColumn(dn,   2);
+            WUX::Controls::Grid::SetColumn(del,  3);
             rowGrid.Children().Append(card);
+            rowGrid.Children().Append(up);
+            rowGrid.Children().Append(dn);
             rowGrid.Children().Append(del);
             rows.Children().Append(rowGrid);
         }
@@ -496,6 +529,36 @@ namespace winrt::TerminalApp::implementation
 
         _customCommands.erase(_customCommands.begin() + idx);
         _localStore.Save(_customCommands); // best-effort; in-memory list is authoritative this session
+        _buildCustomCards();
+    }
+
+    // ↑: swap the command at Tag-index with its predecessor, persist, rebuild.
+    void EnhancedInputContent::_onMoveUpCustomClick(const IInspectable& sender, const WUX::RoutedEventArgs&)
+    {
+        const auto btn{ sender.try_as<WUX::Controls::Button>() };
+        if (!btn) return;
+        const auto tag{ btn.Tag() };
+        if (!tag) return;
+        const auto idx{ static_cast<size_t>(winrt::unbox_value<uint64_t>(tag)) };
+        if (idx == 0 || idx >= _customCommands.size()) return;
+
+        std::swap(_customCommands[idx - 1], _customCommands[idx]);
+        _localStore.Save(_customCommands);
+        _buildCustomCards();
+    }
+
+    // ↓: swap the command at Tag-index with its successor, persist, rebuild.
+    void EnhancedInputContent::_onMoveDownCustomClick(const IInspectable& sender, const WUX::RoutedEventArgs&)
+    {
+        const auto btn{ sender.try_as<WUX::Controls::Button>() };
+        if (!btn) return;
+        const auto tag{ btn.Tag() };
+        if (!tag) return;
+        const auto idx{ static_cast<size_t>(winrt::unbox_value<uint64_t>(tag)) };
+        if (idx + 1 >= _customCommands.size()) return;
+
+        std::swap(_customCommands[idx], _customCommands[idx + 1]);
+        _localStore.Save(_customCommands);
         _buildCustomCards();
     }
 
@@ -1338,6 +1401,13 @@ namespace winrt::TerminalApp::implementation
 
     void EnhancedInputContent::Close()
     {
+        // Persist the current pixel width before we disappear so the next
+        // Alt+E open restores the same size. ActualWidth() is the laid-out
+        // width of the root UserControl; it will be ~0 if the pane was never
+        // shown, in which case SavePanelWidth silently rejects it (< kMinWidth).
+        const auto w = static_cast<float>(ActualWidth());
+        _localStore.SavePanelWidth(w);
+
         CloseRequested.raise(*this, nullptr);
     }
 
