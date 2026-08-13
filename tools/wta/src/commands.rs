@@ -47,11 +47,9 @@ pub enum CommandKind {
     Agent,
     /// Pick the ACP model for *this* agent pane.
     ///
-    /// Bare `/model` opens an interactive picker listing the models the
-    /// connected agent advertised; `/model <id-or-name>` switches directly.
-    /// The choice is a transient per-pane override that survives `/new` for
-    /// the life of the pane but is reset by a global `acpModel` settings
-    /// change — see `App::apply_global_acp_model`.
+    /// Bare `/model` opens an interactive picker listing configured BYOM
+    /// models. Cloud/native models are intentionally omitted; model changes
+    /// are made through Settings because they require an agent restart.
     Model,
     /// Move this tab's agent pane without changing the global pane-position
     /// setting or any other tab.
@@ -65,10 +63,6 @@ pub struct CommandSpec {
     /// time so the popup follows the current locale.
     pub summary_key: &'static str,
     pub kind: CommandKind,
-    /// True if this command takes free-form arguments after the name.
-    /// MVP commands are all zero-arg; the field exists so the popup
-    /// knows whether to leave a trailing space after Tab-completion.
-    pub takes_args: bool,
 }
 
 impl CommandSpec {
@@ -89,63 +83,52 @@ pub const REGISTRY: &[CommandSpec] = &[
         name: "help",
         summary_key: "commands.help.summary",
         kind: CommandKind::Help,
-        takes_args: false,
     },
     CommandSpec {
         name: "clear",
         summary_key: "commands.clear.summary",
         kind: CommandKind::Clear,
-        takes_args: false,
     },
     CommandSpec {
         name: "new",
         summary_key: "commands.new.summary",
         kind: CommandKind::New,
-        takes_args: false,
     },
     CommandSpec {
         name: "fix",
         summary_key: "commands.fix.summary",
         kind: CommandKind::Fix,
-        // `/fix <hint>` — free-form text after the name steers the fix.
-        takes_args: true,
     },
     CommandSpec {
         name: "restart",
         summary_key: "commands.restart.summary",
         kind: CommandKind::Restart,
-        takes_args: false,
     },
     CommandSpec {
         name: "stop",
         summary_key: "commands.stop.summary",
         kind: CommandKind::Stop,
-        takes_args: false,
     },
     CommandSpec {
         name: "sessions",
         summary_key: "commands.sessions.summary",
         kind: CommandKind::Sessions,
-        takes_args: false,
     },
     CommandSpec {
         name: "agent",
         summary_key: "commands.agent.summary",
         kind: CommandKind::Agent,
-        takes_args: true,
     },
     CommandSpec {
         name: "model",
         summary_key: "commands.model.summary",
         // `/model <id>` switches directly; bare `/model` opens the picker.
         kind: CommandKind::Model,
-        takes_args: true,
     },
     CommandSpec {
         name: "move",
         summary_key: "commands.move.summary",
         kind: CommandKind::Move,
-        takes_args: true,
     },
 ];
 
@@ -300,11 +283,8 @@ pub fn matches(prefix: &str) -> Vec<&'static CommandSpec> {
 /// Resolve a `/move` argument from either its full name or one-letter alias.
 pub fn lookup_move_position(value: &str) -> Option<&'static MovePositionSpec> {
     let value = value.trim();
-    MOVE_POSITIONS
-        .iter()
-        .find(|position| {
-            position.name.eq_ignore_ascii_case(value)
-                || position.alias.eq_ignore_ascii_case(value)
+    MOVE_POSITIONS.iter().find(|position| {
+        position.name.eq_ignore_ascii_case(value) || position.alias.eq_ignore_ascii_case(value)
         })
 }
 
@@ -403,7 +383,6 @@ mod tests {
         let trailing_space = parse("/agent ").unwrap();
         assert_eq!(trailing_space.kind, CommandKind::Agent);
         assert_eq!(trailing_space.rest, "");
-        assert!(lookup("agent").unwrap().takes_args);
     }
 
     #[test]
@@ -433,8 +412,6 @@ mod tests {
         let hinted = parse("/fix the path looks wrong").unwrap();
         assert_eq!(hinted.kind, CommandKind::Fix);
         assert_eq!(hinted.rest, "the path looks wrong");
-        // takes_args is advertised so Tab-completion leaves a trailing space.
-        assert!(lookup("fix").unwrap().takes_args);
     }
 
     #[test]

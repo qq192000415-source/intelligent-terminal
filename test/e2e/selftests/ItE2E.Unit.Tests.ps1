@@ -66,6 +66,46 @@ Describe 'JSON helpers' -Tag 'Unit' {
         $o.acpAgent | Should -Be 'copilot'
         $o.autoFixEnabled | Should -BeTrue
     }
+
+    It 'Set-WtSetting verifies nested object arrays structurally' {
+        $settingsPath = Join-Path $TestDrive 'nested-settings.json'
+        '{}' | Set-Content -LiteralPath $settingsPath -Encoding utf8
+        $app = [pscustomobject]@{ SettingsPath = $settingsPath }
+        $providers = @(@{
+            id = 'provider-local'
+            models = @(@{ id = 'test-model'; name = 'Test Model' })
+        })
+
+        Set-WtSetting -App $app -Key 'customModelProviders' -Value $providers | Out-Null
+
+        $stored = Get-WtSetting -App $app -Key 'customModelProviders'
+        @($stored) | Should -HaveCount 1
+        $stored[0].id | Should -Be 'provider-local'
+        $stored[0].models[0].name | Should -Be 'Test Model'
+    }
+}
+
+Describe 'Agent settings cleanup' -Tag 'Unit' {
+    It 'removes showTokenUsageAndCost while preserving profiles' {
+        $settingsPath = Join-Path $TestDrive 'settings.json'
+        @{
+            defaultProfile = '{6239a42c-1111-49a3-80bd-e8fdd045185c}'
+            profiles = @(@{
+                name = 'p0'
+                guid = '{6239a42c-1111-49a3-80bd-e8fdd045185c}'
+            })
+            acpAgent = 'copilot'
+            showTokenUsageAndCost = $true
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $settingsPath -Encoding utf8
+        $app = [pscustomobject]@{ SettingsPath = $settingsPath }
+
+        Clear-WtConfig -App $app
+
+        $settings = Get-WtSettingsObject -App $app
+        $settings.PSObject.Properties.Name | Should -Not -Contain 'showTokenUsageAndCost'
+        $settings.PSObject.Properties.Name | Should -Not -Contain 'acpAgent'
+        $settings.profiles[0].name | Should -Be 'p0'
+    }
 }
 
 Describe 'Resolve-ItApp' -Tag 'Unit' {

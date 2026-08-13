@@ -2,8 +2,14 @@ use std::borrow::Cow;
 
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use unicode_width::UnicodeWidthStr;
 
-use crate::app::{App, ChatMessage, CompletedTurn, PlanEntryStatus};
+use crate::app::{
+    App, ChatMessage, NoticeKind, PlanEntryStatus, ToolCallContent, ToolCallKind, ToolCallLocation,
+    ToolCallOutput,
+};
+#[cfg(test)]
+use crate::app::CompletedTurn;
 use crate::theme;
 use crate::ui::shimmer;
 use crate::ui_trace;
@@ -11,6 +17,150 @@ use crate::ui_trace;
 fn activity_label() -> String { t!("chat.activity_thinking").into_owned() }
 
 const MAX_RENDER_LINE_CHARS: usize = 4096;
+const MAX_TOOL_OUTPUT_LINES: usize = 4;
+const MAX_TOOL_OUTPUT_LINE_CHARS: usize = 240;
+const MAX_TOOL_PREVIEW_LINES: usize = 2;
+const MAX_TOOL_DETAIL_OUTPUT_LINES: usize = 12;
+const MAX_TOOL_DETAIL_LINES: usize = 32;
+
+fn tool_output_lines(output: &ToolCallOutput) -> Vec<String> {
+    let mut lines = output.text.lines().rev();
+    let mut tail: Vec<String> = lines
+        .by_ref()
+        .take(MAX_TOOL_OUTPUT_LINES)
+        .map(|line| {
+            let mut chars = line.chars();
+            let head: String = chars.by_ref().take(MAX_TOOL_OUTPUT_LINE_CHARS).collect();
+            if chars.next().is_some() {
+                format!("{head}…")
+            } else {
+                head
+            }
+        })
+        .collect();
+    let omitted = output.truncated || lines.next().is_some();
+    tail.reverse();
+
+    let mut lines = Vec::with_capacity(MAX_TOOL_OUTPUT_LINES + usize::from(omitted));
+    if omitted {
+        lines.push("…".to_string());
+    }
+    lines.extend(tail);
+    lines
+}
+
+fn full_output_lines(output: &ToolCallOutput, prefix: &str) -> Vec<String> {
+    let mut source = output.text.lines().rev();
+    let mut lines: Vec<String> = source
+        .by_ref()
+        .take(MAX_TOOL_DETAIL_OUTPUT_LINES)
+        .map(|line| {
+            let mut chars = line.chars();
+            let head: String = chars.by_ref().take(MAX_TOOL_OUTPUT_LINE_CHARS).collect();
+            let suffix = if chars.next().is_some() { "…" } else { "" };
+            format!("{prefix}{head}{suffix}")
+        })
+        .collect();
+    let omitted = output.truncated || source.next().is_some();
+    lines.reverse();
+    if omitted {
+        lines.insert(0, format!("{prefix}…"));
+    }
+    if lines.is_empty() {
+        lines.push(prefix.trim_end().to_string());
+    }
+    lines
+}
+
+fn preview_output_lines(output: &ToolCallOutput, prefix: &str) -> Vec<String> {
+    let mut source = output.text.lines().rev();
+    let mut lines: Vec<String> = source
+        .by_ref()
+        .take(MAX_TOOL_PREVIEW_LINES)
+        .map(|line| {
+            let mut chars = line.chars();
+            let head: String = chars.by_ref().take(MAX_TOOL_OUTPUT_LINE_CHARS).collect();
+            let suffix = if chars.next().is_some() { "…" } else { "" };
+            format!("{prefix}{head}{suffix}")
+        })
+        .collect();
+    let omitted = output.truncated || source.next().is_some();
+    lines.reverse();
+    if omitted {
+        lines.insert(0, format!("{prefix}…"));
+    }
+    lines
+}
+
+fn tool_detail_lines(
+    content: &[ToolCallContent],
+    locations: &[ToolCallLocation],
+    detailed: bool,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut omitted = false;
+    if detailed {
+        for location in locations.iter().take(MAX_TOOL_DETAIL_LINES) {
+            let suffix = location.line.map_or_else(String::new, |line| format!(":{line}"));
+            lines.push(format!("    {}{suffix}", location.path));
+        }
+        omitted = locations.len() > MAX_TOOL_DETAIL_LINES;
+    }
+    for item in content {
+        if lines.len() >= MAX_TOOL_DETAIL_LINES {
+            omitted = true;
+            break;
+        }
+        match item {
+            ToolCallContent::Text(output) => {
+                if detailed {
+                    lines.extend(full_output_lines(output, "    │ "));
+                } else {
+                    lines.extend(preview_output_lines(output, "    │ "));
+                }
+            }
+            ToolCallContent::Diff {
+                path,
+                old_text,
+                new_text,
+            } => {
+                lines.push(format!("    Δ {path}"));
+                if detailed {
+                    if let Some(old_text) = old_text {
+                        lines.extend(full_output_lines(old_text, "    - "));
+                    }
+                    lines.extend(full_output_lines(new_text, "    + "));
+                }
+            }
+            ToolCallContent::Terminal {
+                id,
+                output,
+                exit_code,
+            } => {
+                let status = exit_code.map_or_else(String::new, |code| format!(" · exit {code}"));
+                lines.push(format!("    $ {id}{status}"));
+                if detailed {
+                    if let Some(output) = output {
+                        lines.extend(full_output_lines(output, "    │ "));
+                    }
+                }
+            }
+            ToolCallContent::Attachment { label, uri } => {
+                let target = uri.as_deref().map_or_else(String::new, |uri| format!(" · {uri}"));
+                lines.push(format!("    ↳ {label}{target}"));
+            }
+        }
+        if lines.len() > MAX_TOOL_DETAIL_LINES {
+            omitted = true;
+            break;
+        }
+    }
+    if omitted {
+        lines.truncate(MAX_TOOL_DETAIL_LINES.saturating_sub(1));
+        lines.push("    …".to_string());
+    }
+    lines
+}
 
 /// Estimate the chat block's natural height (in visual rows) given the
 /// rendering width. Counts wraps for each message + completed turn. Used by
@@ -20,19 +170,42 @@ const MAX_RENDER_LINE_CHARS: usize = 4096;
 pub fn estimated_block_height(app: &App, area_width: u16) -> u16 {
     let tab = app.current_tab();
     let wrap_width = (area_width as usize).max(1);
-    // Fetch once for the pending-height calculation. `pending_render_text`
-    // re-parses the streaming buffer on every call (and allocates on the
-    // JSON-wrapper path via `extract_json_string_field`).
+    // Fetch once for the pending-height calculation.
     let pending_text = pending_render_text(tab);
 
-    let messages: usize = tab.messages.iter().map(|m| message_height(m, wrap_width)).sum();
-    let turns: usize = tab.completed_turns.iter().map(|t| turn_height(t, wrap_width)).sum();
-    let pending = pending_text
-        .as_deref()
-        .map(|text| {
-            let body_width = wrap_width.saturating_sub(2).max(1);
-            dot_wrap_count(text, body_width)
+    let streaming_index = tab.streaming_agent_message_index();
+    let permission_tool_call_id = permission_tool_call_id(tab);
+    let messages: usize = tab
+        .messages
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| Some(*index) != streaming_index)
+        .map(|(index, message)| {
+            rendered_lines_height(
+                &build_message_lines(
+                    message,
+                    index + 1 == tab.messages.len(),
+                    tab.turn.is_streaming(),
+                    permission_tool_call_id,
+                    tab.activity_frame,
+                    wrap_width,
+                ),
+                wrap_width,
+            )
         })
+        .sum();
+    let turns: usize = tab
+        .completed_turns
+        .iter()
+        .map(|turn| {
+            rendered_lines_height(
+                &build_completed_turn_lines(turn, false, false, wrap_width),
+                wrap_width,
+            )
+        })
+        .sum();
+    let pending = pending_text
+        .map(|_| rendered_lines_height(&build_pending_stream_lines(app, wrap_width), wrap_width))
         .unwrap_or(0);
     // Welcome overlay sits above all chat content when `show_welcome_hint`
     // is on; must be counted here or else any pushed message will scroll
@@ -50,68 +223,47 @@ pub fn estimated_block_height(app: &App, area_width: u16) -> u16 {
     (messages + turns + pending + welcome).max(1).min(u16::MAX as usize) as u16
 }
 
-fn wrap_count(text: &str, width: usize) -> usize {
-    let w = width.max(1);
-    text.split('\n')
-        .map(|line| {
-            let chars = line.chars().count();
-            if chars == 0 { 1 } else { chars.div_ceil(w) }
-        })
-        .sum::<usize>()
-        .max(1)
-}
-
-/// Mirrors `push_dot_prefixed_lines`: leading blank paragraphs are skipped
-/// (the dot lands on the first content row), so they must not be counted
-/// against the chat-area height either.
-fn dot_wrap_count(text: &str, width: usize) -> usize {
-    wrap_count(text.trim_start_matches('\n'), width)
-}
-
+#[cfg(test)]
 fn message_height(msg: &ChatMessage, wrap_width: usize) -> usize {
-    // Most variants render with a 2-cell prefix ("● " for agent/error,
-    // "> " for user) and a trailing blank line.
-    let body_width = wrap_width.saturating_sub(2).max(1);
-    match msg {
-        ChatMessage::Agent(t) | ChatMessage::Error(t) => dot_wrap_count(t, body_width) + 1,
-        ChatMessage::User(t) => wrap_count(t, body_width) + 1,
-        ChatMessage::System(t) | ChatMessage::AgentEvent(t) => wrap_count(t, wrap_width) + 1,
-        ChatMessage::ToolCall { location, location_is_command, .. } => {
-            // Command targets render one line per split statement (see
-            // the render arm below, and `command_format`) — must count
-            // the same number of rows here, or the chat area's height
-            // budget undercounts and clips the scrollback.
-            let command_lines = if *location_is_command {
-                location
-                    .as_deref()
-                    .filter(|l| !l.is_empty())
-                    .map(|l| crate::ui::command_format::command_display_lines(l).len())
-                    .unwrap_or(0)
-            } else {
-                0
-            };
-            1 + command_lines + usize::from(command_lines > 0)
-        }
-        ChatMessage::Plan(entries) => 2 + entries.len(), // header + each entry + blank
-        // Disclaimer is a single dim row — terminal min-width guarantees the
-        // short text fits without wrapping, and no trailing blank is needed.
-        ChatMessage::Disclaimer => 1,
-    }
+    rendered_lines_height(
+        &build_message_lines(msg, false, false, None, 0, wrap_width),
+        wrap_width,
+    )
 }
 
+#[cfg(test)]
 fn turn_height(turn: &CompletedTurn, wrap_width: usize) -> usize {
-    // Collapsed view = single Line "▶ > <prompt>" + trailing blank.
-    let chars = "▶ > ".chars().count() + turn.prompt.chars().count();
-    let prompt_rows = chars.div_ceil(wrap_width.max(1)).max(1);
-    let mut h = prompt_rows + 1;
-    if turn.expanded {
-        h += turn
-            .details
-            .iter()
-            .map(|m| message_height(m, wrap_width))
-            .sum::<usize>();
-    }
-    h
+    rendered_lines_height(
+        &build_completed_turn_lines(turn, false, false, wrap_width),
+        wrap_width,
+    )
+}
+
+fn rendered_lines_height(lines: &[Line<'_>], wrap_width: usize) -> usize {
+    let width = wrap_width.max(1);
+    lines
+        .iter()
+        .map(|line| {
+            let text = match line.spans.as_slice() {
+                [] => return 1,
+                [span] => Cow::Borrowed(span.content.as_ref()),
+                spans => Cow::Owned(
+                    spans
+                        .iter()
+                        .map(|span| span.content.as_ref())
+                        .collect::<String>(),
+                ),
+            };
+            let display_width = UnicodeWidthStr::width(text.as_ref());
+            if display_width == 0 {
+                1
+            } else if display_width <= width {
+                1
+            } else {
+                textwrap::wrap(text.as_ref(), width).len().max(1)
+            }
+        })
+        .sum()
 }
 
 fn starts_with_ignore_ascii_case(value: &str, prefix: &str) -> bool {
@@ -154,6 +306,11 @@ fn should_show_turn_activity(tab: &crate::app::TabSession) -> bool {
     tab.should_show_thinking()
 }
 
+pub(crate) fn should_show_activity(app: &App) -> bool {
+    matches!(app.state, crate::app::ConnectionState::Connecting(_))
+        || should_show_turn_activity(app.current_tab())
+}
+
 fn permission_tool_call_id(tab: &crate::app::TabSession) -> Option<&str> {
     tab.permission
         .front()
@@ -189,7 +346,11 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let tab = app.current_tab();
     let permission_tool_call_id = permission_tool_call_id(tab);
+    let streaming_index = tab.streaming_agent_message_index();
     for (idx, msg) in tab.messages.iter().enumerate().rev() {
+        if Some(idx) == streaming_index {
+            continue;
+        }
         let is_last_message = idx + 1 == tab.messages.len();
         let mut message_lines = build_message_lines(
             msg,
@@ -238,14 +399,14 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let lines: Vec<Line> = reversed_lines.into_iter().rev().collect();
 
-    let total_lines = lines.len();
+    let total_lines = rendered_lines_height(&lines, wrap_width);
     let scroll = total_lines.saturating_sub(visible_height.saturating_add(app.current_tab().chat_scroll.offset));
 
     let paragraph = Paragraph::new(lines)
         .block(inner)
         .alignment(crate::rtl::text_alignment())
         .wrap(Wrap { trim: false })
-        .scroll((scroll as u16, 0));
+        .scroll((scroll.min(u16::MAX as usize) as u16, 0));
 
     frame.render_widget(paragraph, area);
 
@@ -263,7 +424,10 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         format!(
             "messages={} pending_chars={} requested_lines={} visible_height={} area={}x{}",
             app.current_tab().messages.len(),
-            app.current_tab().turn.buffer().map(|b| b.chars().count()).unwrap_or(0),
+            app.current_tab()
+                .streaming_agent_text()
+                .map(|text| text.chars().count())
+                .unwrap_or(0),
             requested_lines,
             visible_height,
             area.width,
@@ -344,7 +508,9 @@ fn build_completed_turn_lines<'a>(
         // `agent_streaming=false` together suppress the streaming-cursor
         // path; details are always finalized by the time they land here.
         for msg in turn.details.iter() {
-            lines.extend(build_message_lines(msg, false, false, None, 0, wrap_width));
+            lines.extend(build_message_lines_with_details(
+                msg, false, false, None, 0, wrap_width, true,
+            ));
         }
     }
 
@@ -392,133 +558,15 @@ pub fn render_activity(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(line), area);
 }
 
-/// Incrementally extracts a JSON string field's decoded value from a
-/// possibly-truncated text. Handles `\"`, `\\`, `\n`, `\t`, `\uXXXX` and
-/// UTF-16 surrogate pairs (e.g. emoji). Returns the partial value if the
-/// closing quote hasn't arrived yet.
-pub(crate) fn extract_json_string_field(text: &str, field: &str) -> Option<String> {
-    let key = format!("\"{field}\"");
-    // Find the occurrence of `"field"` that is actually a *key* (followed by
-    // `:`), not the same token appearing earlier as a string value. Without
-    // this, `{"kind":"explanation","explanation":"real"}` would stop at the
-    // value and return None.
-    let mut search_from = 0;
-    let rest = loop {
-        let rel = text[search_from..].find(&key)?;
-        let abs = search_from + rel;
-        let after = text[abs + key.len()..].trim_start();
-        if let Some(r) = after.strip_prefix(':') {
-            break r.trim_start();
-        }
-        search_from = abs + key.len();
-    };
-    let body = rest.strip_prefix('"')?;
-
-    let mut out = String::with_capacity(body.len());
-    let mut chars = body.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '"' => return Some(out),
-            '\\' => match chars.next() {
-                None => return Some(out),
-                Some('"') => out.push('"'),
-                Some('\\') => out.push('\\'),
-                Some('/') => out.push('/'),
-                Some('n') => out.push('\n'),
-                Some('r') => out.push('\r'),
-                Some('t') => out.push('\t'),
-                Some('b') => out.push('\u{08}'),
-                Some('f') => out.push('\u{0C}'),
-                Some('u') => {
-                    let hex: String = chars.by_ref().take(4).collect();
-                    if hex.len() < 4 {
-                        return Some(out);
-                    }
-                    let Some(code) = u32::from_str_radix(&hex, 16).ok() else {
-                        continue;
-                    };
-                    match code {
-                        // High surrogate: pair it with the following
-                        // `\uXXXX` low surrogate to recover the non-BMP scalar
-                        // (e.g. emoji). If the low half hasn't streamed in yet
-                        // (or is malformed), drop the lone surrogate — the next
-                        // frame re-runs over the now-complete buffer.
-                        0xD800..=0xDBFF => {
-                            let mut lookahead = chars.clone();
-                            if lookahead.next() == Some('\\')
-                                && lookahead.next() == Some('u')
-                            {
-                                let lo_hex: String = lookahead.by_ref().take(4).collect();
-                                if lo_hex.len() == 4 {
-                                    if let Some(lo @ 0xDC00..=0xDFFF) =
-                                        u32::from_str_radix(&lo_hex, 16).ok()
-                                    {
-                                        let scalar = 0x1_0000
-                                            + ((code - 0xD800) << 10)
-                                            + (lo - 0xDC00);
-                                        if let Some(ch) = char::from_u32(scalar) {
-                                            out.push(ch);
-                                        }
-                                        chars = lookahead; // consume the low half
-                                    }
-                                }
-                            }
-                        }
-                        // Lone low surrogate or any non-scalar: skip. Valid
-                        // scalars get pushed.
-                        _ => {
-                            if let Some(ch) = char::from_u32(code) {
-                                out.push(ch);
-                            }
-                        }
-                    }
-                }
-                Some(other) => out.push(other),
-            },
-            c => out.push(c),
-        }
-    }
-    Some(out)
-}
-
-/// Resolves the user-visible portion of a streaming buffer:
-///
-/// - Buffer starts with a JSON wrapper (autofix): extract the `explanation`
-///   field so the user sees flowing markdown rather than raw JSON syntax.
-///   fix actions lack this field and yield None — the card surfaces on
-///   finalize.
-/// - Buffer is mixed prose followed by a fenced JSON block (planner
-///   terminal-task mode): render only the prose prefix; the recommendation
-///   card replaces it on eager/end-of-turn finalize.
-/// - Pure prose: stream as-is.
-///
-/// Callers outside the render path (e.g. turn-cancel / ignore commits) use
-/// this to record exactly what the user saw during streaming, instead of the
-/// raw buffer (which may contain JSON the UI deliberately hid).
+/// Return non-empty assistant text for streaming and transcript rendering.
+/// Typed proposal payloads travel through the direct Helper channel, so ACP
+/// assistant text is always user-visible chat content.
 pub(crate) fn user_visible_stream_text(text: &str) -> Option<Cow<'_, str>> {
-    let trimmed = text.trim_start();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if trimmed.starts_with("```") || trimmed.starts_with('{') {
-        return extract_json_string_field(text, "explanation")
-            .filter(|s| !s.is_empty())
-            .map(Cow::Owned);
-    }
-    if let Some(fence_pos) = text.find("```") {
-        let prose = text[..fence_pos].trim_end();
-        return if prose.is_empty() {
-            None
-        } else {
-            Some(Cow::Borrowed(prose))
-        };
-    }
-    Some(Cow::Borrowed(text))
+    (!text.trim().is_empty()).then_some(Cow::Borrowed(text))
 }
 
 fn pending_render_text(tab: &crate::app::TabSession) -> Option<Cow<'_, str>> {
-    // Pending text is only meaningful while the turn is actively streaming.
-    user_visible_stream_text(tab.turn.buffer()?)
+    user_visible_stream_text(tab.streaming_agent_text()?)
 }
 
 fn build_pending_stream_lines<'a>(app: &App, wrap_width: usize) -> Vec<Line<'a>> {
@@ -530,11 +578,11 @@ fn build_pending_stream_lines<'a>(app: &App, wrap_width: usize) -> Vec<Line<'a>>
     // the streaming text. The reveal cursor is advanced toward the full length
     // by the `RevealTick` animation (`App::advance_reveal`), turning the
     // upstream ~90-char-every-~100ms bursts into a smooth character flow. The
-    // full text is always in `turn.buffer()`, and finalize commits it in full,
-    // so this never drops or delays the final content.
+    // full text is always in the ordered transcript, and finalize moves that
+    // transcript to history unchanged.
     let revealed: Cow<'_, str> = {
         let total = text.chars().count();
-        let shown = tab.reveal_chars.min(total);
+        let shown = tab.reveal_chars.max(1).min(total);
         if shown >= total {
             text
         } else {
@@ -559,6 +607,26 @@ fn build_message_lines<'a>(
     permission_tool_call_id: Option<&str>,
     activity_frame: usize,
     wrap_width: usize,
+) -> Vec<Line<'a>> {
+    build_message_lines_with_details(
+        msg,
+        is_last_message,
+        agent_streaming,
+        permission_tool_call_id,
+        activity_frame,
+        wrap_width,
+        false,
+    )
+}
+
+fn build_message_lines_with_details<'a>(
+    msg: &'a ChatMessage,
+    is_last_message: bool,
+    agent_streaming: bool,
+    permission_tool_call_id: Option<&str>,
+    activity_frame: usize,
+    wrap_width: usize,
+    detailed_tools: bool,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     match msg {
@@ -587,12 +655,28 @@ fn build_message_lines<'a>(
             }
             lines.push(Line::default());
         }
+        ChatMessage::Notice { kind, text } => {
+            let (marker, style) = match kind {
+                NoticeKind::Success => ("✓", theme::NOTICE_SUCCESS),
+                NoticeKind::Info => ("i", theme::NOTICE_INFO),
+                NoticeKind::Warning => ("!", theme::NOTICE_WARNING),
+                NoticeKind::Error => ("×", theme::NOTICE_ERROR),
+            };
+            push_prefixed_lines(&mut lines, marker, text, wrap_width, style);
+            lines.push(Line::default());
+        }
         ChatMessage::ToolCall {
             id,
             title,
             status,
+            kind,
             location,
             location_is_command,
+            cwd,
+            output,
+            exit_code,
+            content,
+            locations,
         } => {
             let (marker, marker_style, detail) = tool_call_presentation(status);
             let marker = if permission_tool_call_id == Some(id.as_str())
@@ -622,11 +706,31 @@ fn build_message_lines<'a>(
                     ));
                 }
             }
+            if *kind == ToolCallKind::Execute {
+                if let Some(cwd) = cwd
+                    .as_deref()
+                    .filter(|cwd| !cwd.is_empty())
+                    .filter(|cwd| !title.contains(cwd))
+                {
+                    spans.push(Span::styled(
+                        format!(" ({})", truncate_render_text(cwd)),
+                        theme::DIM,
+                    ));
+                }
+            }
             if let Some(detail) = detail.filter(|detail| !detail.is_empty()) {
                 spans.push(Span::styled(
                     format!(" · {}", truncate_render_text(detail)),
                     theme::DIM,
                 ));
+            }
+            if !detailed_tools && (*kind == ToolCallKind::Execute || *location_is_command) {
+                if let Some(exit_code) = exit_code.filter(|_| {
+                    !starts_with_ignore_ascii_case(status, "exited (")
+                        && !starts_with_ignore_ascii_case(status, "failed:")
+                }) {
+                    spans.push(Span::styled(format!(" · exit {exit_code}"), theme::DIM));
+                }
             }
             lines.push(Line::from(spans));
             // A command target can be several `;`-chained PowerShell
@@ -644,19 +748,43 @@ fn build_message_lines<'a>(
                 if let Some(command) = location {
                     for entry in crate::ui::command_format::command_display_lines(command) {
                         rendered_command = true;
-                        let text = match entry {
-                            crate::ui::command_format::CommandLine::Statement(s) => {
-                                format!("    $ {s}")
-                            }
-                            crate::ui::command_format::CommandLine::Folded { remaining } => {
-                                format!("    … (+{remaining} more)")
-                            }
-                        };
-                        lines.push(Line::from(Span::styled(text, theme::CARD_CODE)));
+                        lines.push(Line::from(Span::styled(
+                            entry.rendered_text("    "),
+                            theme::CARD_CODE,
+                        )));
                     }
                 }
             }
-            if rendered_command {
+            let mut rendered_output = false;
+            if !detailed_tools && (*kind == ToolCallKind::Execute || *location_is_command) {
+                if let Some(output) = output {
+                    for line in tool_output_lines(output) {
+                        rendered_output = true;
+                        lines.push(Line::from(Span::styled(
+                            format!("    │ {line}"),
+                            theme::DIM,
+                        )));
+                    }
+                }
+            }
+            let has_text_content = content
+                .iter()
+                .any(|item| matches!(item, ToolCallContent::Text(_)));
+            let mut detail_lines = tool_detail_lines(content, locations, detailed_tools);
+            if !has_text_content {
+                if let Some(output) = output {
+                    if detailed_tools {
+                        detail_lines.extend(full_output_lines(output, "    │ "));
+                    } else if *kind != ToolCallKind::Execute && !*location_is_command {
+                        detail_lines.extend(preview_output_lines(output, "    │ "));
+                    }
+                }
+            }
+            let rendered_details = !detail_lines.is_empty();
+            for line in detail_lines {
+                lines.push(Line::from(Span::styled(line, theme::DIM)));
+            }
+            if rendered_command || rendered_output || rendered_details {
                 lines.push(Line::default());
             }
         }
@@ -762,6 +890,43 @@ fn push_dot_prefixed_lines<'a>(
     }
 }
 
+fn push_prefixed_lines<'a>(
+    lines: &mut Vec<Line<'a>>,
+    marker: &'static str,
+    text: &str,
+    wrap_width: usize,
+    style: Style,
+) {
+    let body_width = wrap_width.saturating_sub(2).max(1);
+    let mut first_row = true;
+
+    for paragraph in text.split('\n') {
+        if paragraph.is_empty() {
+            if first_row {
+                continue;
+            }
+            lines.push(Line::default());
+            continue;
+        }
+
+        for piece in textwrap::wrap(paragraph, body_width) {
+            let piece_str = truncate_render_text(&piece).into_owned();
+            if first_row {
+                lines.push(Line::from(vec![
+                    Span::styled(format!("{marker} "), style),
+                    Span::styled(piece_str, style),
+                ]));
+                first_row = false;
+            } else {
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(piece_str, style),
+                ]));
+            }
+        }
+    }
+}
+
 /// Mirrors `push_dot_prefixed_lines`, but for the user's own submitted
 /// prompt: splits on embedded `\n` (from Shift+Enter multi-line input) and
 /// wraps each paragraph so every line is a real `ratatui::Line` — ratatui
@@ -769,8 +934,8 @@ fn push_dot_prefixed_lines<'a>(
 /// multiple rows, so without this split any line after the first would
 /// never appear in the rendered transcript (see issue #492). The first
 /// rendered row gets the `"> "` prompt marker; continuation rows get a
-/// matching 2-cell indent, consistent with `message_height`'s
-/// `wrap_count`-based row estimate for `ChatMessage::User`.
+/// matching 2-cell indent. Height measurement consumes these same rendered
+/// lines and counts their terminal display width.
 fn push_prompt_prefixed_lines<'a>(lines: &mut Vec<Line<'a>>, text: &'a str, wrap_width: usize) {
     let body_width = wrap_width.saturating_sub(2).max(1);
     let mut first_row = true;
@@ -863,6 +1028,116 @@ mod tests {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
+    #[test]
+    fn notices_render_distinct_markers_and_hanging_indents() {
+        let cases = [
+            (NoticeKind::Success, "✓"),
+            (NoticeKind::Info, "i"),
+            (NoticeKind::Warning, "!"),
+            (NoticeKind::Error, "×"),
+        ];
+
+        for (kind, marker) in cases {
+            let message = ChatMessage::Notice {
+                kind,
+                text: "A notice that wraps onto another line".into(),
+            };
+            let lines = build_message_lines(&message, false, false, None, 0, 20);
+            assert!(line_text(&lines[0]).starts_with(&format!("{marker} ")));
+            assert!(
+                line_text(&lines[1]).starts_with("  "),
+                "continuation rows must align with the notice body"
+            );
+            assert!(line_text(lines.last().expect("trailing row")).is_empty());
+        }
+    }
+
+    #[test]
+    fn notice_prefix_skips_leading_blank_lines() {
+        let message = ChatMessage::info("\n\nNotice text");
+        let lines = build_message_lines(&message, false, false, None, 0, 20);
+
+        assert_eq!(line_text(&lines[0]), "i Notice text");
+        assert_eq!(lines.len(), message_height(&message, 20));
+    }
+
+    #[test]
+    fn message_height_uses_terminal_display_width_for_cjk() {
+        let message = ChatMessage::Agent("你好".into());
+        let lines = build_message_lines(&message, false, false, None, 0, 4);
+
+        assert_eq!(lines.len(), 3, "two CJK glyphs wrap into two body rows");
+        assert_eq!(message_height(&message, 4), lines.len());
+    }
+
+    #[test]
+    fn rendered_height_accounts_for_word_wrap_gaps() {
+        let lines = vec![Line::from("aaa aaa aaa aaa")];
+
+        assert_eq!(rendered_lines_height(&lines, 5), 4);
+    }
+
+    #[test]
+    fn expanded_turn_height_matches_rendered_detail_endings() {
+        let cases = [
+            (
+                "agent text",
+                vec![ChatMessage::Agent(
+                    "I checked the working tree and found one change.".into(),
+                )],
+            ),
+            (
+                "compact tool call",
+                vec![ChatMessage::ToolCall {
+                    id: "tool".into(),
+                    title: "Read source".into(),
+                    status: "Completed".into(),
+                    kind: ToolCallKind::Read,
+                    location: Some(r"C:\src\main.rs".into()),
+                    location_is_command: false,
+                    cwd: None,
+                    output: None,
+                    exit_code: None,
+                    content: Vec::new(),
+                    locations: Vec::new(),
+                }],
+            ),
+            (
+                "command tool call",
+                vec![ChatMessage::ToolCall {
+                    id: "tool".into(),
+                    title: "Run tests".into(),
+                    status: "Completed".into(),
+                    kind: ToolCallKind::Execute,
+                    location: Some("cargo test --workspace".into()),
+                    location_is_command: true,
+                    cwd: None,
+                    output: None,
+                    exit_code: None,
+                    content: Vec::new(),
+                    locations: Vec::new(),
+                }],
+            ),
+            ("disclaimer", vec![ChatMessage::Disclaimer]),
+            ("empty details", Vec::new()),
+        ];
+
+        for (name, details) in cases {
+            let turn = CompletedTurn {
+                prompt: "What changed?".into(),
+                details,
+                expanded: true,
+                trailing_marker: None,
+            };
+
+            assert_eq!(
+                turn_height(&turn, 80),
+                build_completed_turn_lines(&turn, false, true, 80).len(),
+                "{name}"
+            );
+        }
+    }
+
     fn assert_tool_call(
         status: &str,
         expected_text: &str,
@@ -873,8 +1148,14 @@ mod tests {
             id: "tool".into(),
             title: "Run: cargo test".into(),
             status: status.into(),
+            kind: ToolCallKind::Other,
             location: None,
             location_is_command: false,
+            cwd: None,
+            output: None,
+            exit_code: None,
+            content: Vec::new(),
+            locations: Vec::new(),
         };
         let lines = build_message_lines(&message, false, false, None, 0, 80);
         let line = &lines[0];
@@ -894,8 +1175,14 @@ mod tests {
             id: "tool".into(),
             title: "Access paths outside trusted directories".into(),
             status: "Pending".into(),
+            kind: ToolCallKind::Other,
             location: Some(r"C:\src\rust-app".into()),
             location_is_command: false,
+            cwd: None,
+            output: None,
+            exit_code: None,
+            content: Vec::new(),
+            locations: Vec::new(),
         };
         let lines = build_message_lines(&message, false, false, None, 0, 80);
         let line = &lines[0];
@@ -922,8 +1209,14 @@ mod tests {
             id: "tool".into(),
             title: "Run command".into(),
             status: "Pending".into(),
+            kind: ToolCallKind::Execute,
             location: Some("cargo test --workspace".into()),
             location_is_command: true,
+            cwd: None,
+            output: None,
+            exit_code: None,
+            content: Vec::new(),
+            locations: Vec::new(),
         };
         let lines = build_message_lines(&message, false, false, None, 0, 80);
 
@@ -956,10 +1249,16 @@ mod tests {
             id: "tool".into(),
             title: "Check installed PowerToys and Foundry Local packages".into(),
             status: "Completed".into(),
+            kind: ToolCallKind::Execute,
             location: Some(
                 "winget list --name PowerToys 2>$null; winget list --name Foundry 2>$null".into(),
             ),
             location_is_command: true,
+            cwd: None,
+            output: None,
+            exit_code: None,
+            content: Vec::new(),
+            locations: Vec::new(),
         };
         let lines = build_message_lines(&message, false, false, None, 0, 80);
 
@@ -982,6 +1281,99 @@ mod tests {
             4,
             "the height budget must count one row per split statement"
         );
+    }
+
+    #[test]
+    fn execute_tool_call_renders_cwd_reported_output_tail_and_exit_code() {
+        let cwd = concat!("C:", "\\", "repo");
+        let message = ChatMessage::ToolCall {
+            id: "tool".into(),
+            title: "bash".into(),
+            status: "Completed".into(),
+            kind: ToolCallKind::Execute,
+            location: Some("cargo test".into()),
+            location_is_command: true,
+            cwd: Some(cwd.into()),
+            output: Some(ToolCallOutput {
+                text: ["line 1", "line 2", "line 3", "line 4", "line 5"].join("\n"),
+                truncated: false,
+            }),
+            exit_code: Some(0),
+            content: Vec::new(),
+            locations: Vec::new(),
+        };
+        let lines = build_message_lines(&message, false, false, None, 0, 120);
+        let rendered: Vec<String> = lines.iter().map(line_text).collect();
+
+        assert_eq!(rendered[0], format!("✓ bash ({cwd}) · exit 0"));
+        assert_eq!(rendered[1], "    $ cargo test");
+        assert_eq!(rendered[2], "    │ …");
+        assert_eq!(rendered[3], "    │ line 2");
+        assert_eq!(rendered[6], "    │ line 5");
+        assert!(rendered[7].is_empty());
+        assert_eq!(lines.len(), message_height(&message, 120));
+    }
+
+    #[test]
+    fn completed_non_execute_tool_call_shows_bounded_output_preview() {
+        let location = concat!("C:", "\\", "repo", "\\", "large.txt");
+        let message = ChatMessage::ToolCall {
+            id: "tool".into(),
+            title: "Read file".into(),
+            status: "Completed".into(),
+            kind: ToolCallKind::Read,
+            location: Some(location.into()),
+            location_is_command: false,
+            cwd: None,
+            output: Some(ToolCallOutput {
+                text: ["line 1", "line 2", "line 3", "line 4"].join("\n"),
+                truncated: false,
+            }),
+            exit_code: Some(200),
+            content: Vec::new(),
+            locations: Vec::new(),
+        };
+        let lines = build_message_lines(&message, false, false, None, 0, 120);
+        let rendered: Vec<String> = lines.iter().map(line_text).collect();
+
+        assert_eq!(rendered[1], "    │ …");
+        assert_eq!(rendered[2], "    │ line 3");
+        assert_eq!(rendered[3], "    │ line 4");
+        assert!(!rendered.iter().any(|line| line.contains("line 1")));
+        assert!(!rendered[0].contains("exit 200"));
+        assert!(rendered[4].is_empty());
+        assert_eq!(lines.len(), message_height(&message, 120));
+    }
+
+    #[test]
+    fn expanded_tool_output_is_bounded_for_large_file_lists() {
+        let output = ToolCallOutput {
+            text: (0..200)
+                .map(|index| format!("debug/incremental/object-{index:03}.o"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            truncated: false,
+        };
+        let lines = tool_detail_lines(&[ToolCallContent::Text(output)], &[], true);
+
+        assert_eq!(lines.len(), MAX_TOOL_DETAIL_OUTPUT_LINES + 1);
+        assert_eq!(lines[0], "    │ …");
+        assert!(lines.last().is_some_and(|line| line.ends_with("object-199.o")));
+    }
+
+    #[test]
+    fn tool_detail_lines_strictly_caps_locations_including_ellipsis() {
+        let locations: Vec<ToolCallLocation> = (0..=MAX_TOOL_DETAIL_LINES)
+            .map(|index| ToolCallLocation {
+                path: format!("file-{index}.rs"),
+                line: None,
+            })
+            .collect();
+
+        let lines = tool_detail_lines(&[], &locations, true);
+
+        assert_eq!(lines.len(), MAX_TOOL_DETAIL_LINES);
+        assert_eq!(lines.last().map(String::as_str), Some("    …"));
     }
 
     #[test]
@@ -1055,90 +1447,6 @@ mod tests {
         assert_ne!(theme::TOOL_CALL_CANCELED, theme::DIM);
     }
 
-    // ── extract_json_string_field: escape decoding ──────────────────────────
-
-    #[test]
-    fn json_field_basic_value() {
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"hello"}"#, "explanation")
-                .as_deref(),
-            Some("hello")
-        );
-    }
-
-    #[test]
-    fn json_field_decodes_escapes() {
-        // \" \\ \/ \n \r \t all per RFC 8259.
-        let raw = r#"{"explanation":"a\"b\\c\/d\ne\tf"}"#;
-        assert_eq!(
-            extract_json_string_field(raw, "explanation").as_deref(),
-            Some("a\"b\\c/d\ne\tf")
-        );
-    }
-
-    #[test]
-    fn json_field_decodes_bmp_unicode_escape() {
-        // \u0041 = 'A', \u00e9 = 'é'
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"\u0041\u00e9"}"#, "explanation")
-                .as_deref(),
-            Some("Aé")
-        );
-    }
-
-    #[test]
-    fn json_field_tolerates_whitespace_around_colon() {
-        assert_eq!(
-            extract_json_string_field("{ \"explanation\" : \"v\" }", "explanation")
-                .as_deref(),
-            Some("v")
-        );
-    }
-
-    #[test]
-    fn json_field_returns_partial_when_unterminated() {
-        // Streaming: the closing quote hasn't arrived yet — show what we have.
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"hello world"#, "explanation")
-                .as_deref(),
-            Some("hello world")
-        );
-    }
-
-    #[test]
-    fn json_field_absent_returns_none() {
-        assert_eq!(
-            extract_json_string_field(r#"{"command":"ls"}"#, "explanation"),
-            None
-        );
-    }
-
-    // ── extract_json_string_field: ADVERSARIAL (expected to expose gaps) ─────
-
-    /// A non-BMP character (emoji) encoded as a UTF-16 surrogate pair must
-    /// decode to the actual character. Agents routinely emit emoji in prose.
-    #[test]
-    fn json_field_decodes_surrogate_pair_emoji() {
-        // U+1F600 😀 = \uD83D\uDE00 in UTF-16.
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"\uD83D\uDE00"}"#, "explanation")
-                .as_deref(),
-            Some("😀")
-        );
-    }
-
-    /// When the field name also appears earlier as a *value*, extraction must
-    /// still find the real key=value pair, not give up at the first textual
-    /// match.
-    #[test]
-    fn json_field_skips_name_appearing_as_value() {
-        let raw = r#"{"kind":"explanation","explanation":"real"}"#;
-        assert_eq!(
-            extract_json_string_field(raw, "explanation").as_deref(),
-            Some("real")
-        );
-    }
-
     // ── user_visible_stream_text ────────────────────────────────────────────
 
     #[test]
@@ -1150,30 +1458,19 @@ mod tests {
     }
 
     #[test]
-    fn stream_text_json_wrapper_extracts_explanation() {
-        assert_eq!(
-            user_visible_stream_text(r#"{"explanation":"why blue"}"#).as_deref(),
-            Some("why blue")
-        );
+    fn stream_text_json_passes_through_verbatim() {
+        let text = r#"{"explanation":"why blue","command":"ls"}"#;
+        assert_eq!(user_visible_stream_text(text).as_deref(), Some(text));
     }
 
     #[test]
-    fn stream_text_json_without_explanation_is_hidden() {
-        // A fix-action wrapper (no explanation) must not leak raw JSON.
-        assert_eq!(user_visible_stream_text(r#"{"command":"ls"}"#), None);
+    fn stream_text_prose_then_fence_passes_through_verbatim() {
+        let text = "Here is the plan.\n```json\n{\"choices\":[]}\n```";
+        assert_eq!(user_visible_stream_text(text).as_deref(), Some(text));
     }
 
     #[test]
-    fn stream_text_prose_then_fence_shows_prose_prefix_only() {
-        let buf = "Here is the plan.\n```json\n{\"choices\":[]}\n```";
-        assert_eq!(
-            user_visible_stream_text(buf).as_deref(),
-            Some("Here is the plan.")
-        );
-    }
-
-    #[test]
-    fn stream_text_empty_is_none() {
+    fn stream_text_blank_is_none() {
         assert_eq!(user_visible_stream_text("   \n  "), None);
     }
 
@@ -1184,10 +1481,13 @@ mod tests {
                 id: 1,
                 text: "hi".into(),
                 submitted_at_unix_s: 0.0,
+                context: crate::app::TurnContext::default(),
                 autofix: None,
             },
-            buf: buf.to_string(),
         };
+        if !buf.is_empty() {
+            tab.messages.push(crate::app::ChatMessage::Agent(buf.to_string()));
+        }
         tab.reveal_chars = reveal_chars;
         tab
     }
@@ -1219,15 +1519,27 @@ mod tests {
             id: "tool-2".into(),
             title: "Read Cargo.toml".into(),
             status: "Completed".into(),
+            kind: ToolCallKind::Read,
             location: None,
             location_is_command: false,
+            cwd: None,
+            output: None,
+            exit_code: None,
+            content: Vec::new(),
+            locations: Vec::new(),
         };
         let other = ChatMessage::ToolCall {
             id: "tool-1".into(),
             title: "Find files".into(),
             status: "Completed".into(),
+            kind: ToolCallKind::Search,
             location: None,
             location_is_command: false,
+            cwd: None,
+            output: None,
+            exit_code: None,
+            content: Vec::new(),
+            locations: Vec::new(),
         };
 
         let matching_lines =
@@ -1245,8 +1557,14 @@ mod tests {
                 id: "tool".into(),
                 title: "Find files".into(),
                 status: status.into(),
+                kind: ToolCallKind::Search,
                 location: None,
                 location_is_command: false,
+                cwd: None,
+                output: None,
+                exit_code: None,
+                content: Vec::new(),
+                locations: Vec::new(),
             };
             let lines = build_message_lines(&message, false, false, None, 9, 80);
             assert_eq!(lines[0].spans[0].content, "·", "{status} should breathe");
