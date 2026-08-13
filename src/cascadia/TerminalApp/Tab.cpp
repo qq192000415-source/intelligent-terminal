@@ -774,7 +774,8 @@ namespace winrt::TerminalApp::implementation
     // Return Value:
     // - a pair of (the Pane wrapping the original tree, the new Pane)
     std::pair<std::shared_ptr<Pane>, std::shared_ptr<Pane>> Tab::SplitPaneAtRoot(SplitDirection splitType,
-                                                                                  std::shared_ptr<Pane> pane)
+                                                                                  std::shared_ptr<Pane> pane,
+                                                                                  const float splitSize)
     {
         ASSERT_UI_THREAD();
 
@@ -830,7 +831,7 @@ namespace winrt::TerminalApp::implementation
         // Grid object is preserved (mutated in place, never reassigned), so the
         // parent's border child pointer — and Content() at the root — remain
         // valid without any re-parenting.
-        auto originalTree = target->AttachPane(pane, splitType);
+        auto originalTree = target->AttachPane(pane, splitType, splitSize);
 
         // The split created a new wrapper pane for the original subtree. Attach
         // Tab event handlers so that focus changes are tracked correctly —

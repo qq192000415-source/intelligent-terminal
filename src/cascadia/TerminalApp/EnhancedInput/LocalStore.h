@@ -31,6 +31,16 @@ namespace winrt::TerminalApp::implementation
     // called serially on the UI thread.
     struct LocalStore
     {
+        // Docked width of the panel, in DIPs. Persisted so the panel reopens at
+        // the size the user dragged it to. Stored as pixels rather than a split
+        // fraction because the panel's natural width is set by its content (a
+        // 2-column card grid), not by the window: at 0.5 the panel took half of
+        // a wide monitor. kMaxWidthFraction keeps it from dominating a small
+        // window, and kMinWidth matches EnhancedInputContent::MinimumSize().
+        static constexpr float kDefaultWidth = 400.0f;
+        static constexpr float kMinWidth = 280.0f;
+        static constexpr float kMaxWidthFraction = 0.75f;
+
         // claudeDir defaults to %USERPROFILE%\.claude; tests inject a temp dir.
         explicit LocalStore(std::filesystem::path claudeDir = {});
 
@@ -41,9 +51,21 @@ namespace winrt::TerminalApp::implementation
         // Returns false on any IO / encoding failure.
         bool Save(const std::vector<CustomCommand>& commands) const noexcept;
 
+        // Persisted panel width in DIPs. Returns kDefaultWidth when the file is
+        // missing / malformed / out of range, so callers always get a usable
+        // width without having to special-case first run.
+        float LoadPanelWidth() const noexcept;
+
+        // Write the panel width. Values below kMinWidth are ignored (a collapsed
+        // or not-yet-laid-out pane reports ~0 and must not overwrite a good
+        // width). Returns false on any IO failure.
+        bool SavePanelWidth(float width) const noexcept;
+
         const std::filesystem::path& FilePath() const noexcept { return _file; }
+        const std::filesystem::path& LayoutFilePath() const noexcept { return _layoutFile; }
 
     private:
         std::filesystem::path _file;
+        std::filesystem::path _layoutFile;
     };
 }

@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "LocalStore.h"
 
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <json/json.h>
@@ -30,6 +31,7 @@ namespace winrt::TerminalApp::implementation
             claudeDir = _defaultClaudeDir();
         }
         _file = claudeDir / L"custom_commands.json";
+        _layoutFile = claudeDir / L"enhanced_input_layout.json";
     }
 
     // Read the whole file (UTF-8) and parse a JSON array of {cmd,tag,desc} objects.
@@ -115,6 +117,92 @@ namespace winrt::TerminalApp::implementation
         const auto text = Json::writeString(wb, root);
 
         std::ofstream out{ _file, std::ios::binary | std::ios::trunc };
+        if (!out)
+        {
+            return false;
+        }
+        out.write(text.data(), static_cast<std::streamsize>(text.size()));
+        out.close();
+        return static_cast<bool>(out);
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    // Read the persisted panel width. Anything unusable — missing file, bad JSON,
+    // non-finite or below the pane minimum — falls back to kDefaultWidth so the
+    // caller never has to special-case first run. No upper clamp here: that
+    // depends on the window size and is applied at open time.
+    float LocalStore::LoadPanelWidth() const noexcept
+    try
+    {
+        std::ifstream in{ _layoutFile, std::ios::binary };
+        if (!in)
+        {
+            return kDefaultWidth;
+        }
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        const auto raw = ss.str();
+        if (raw.empty())
+        {
+            return kDefaultWidth;
+        }
+
+        Json::Value root;
+        Json::CharReaderBuilder rb;
+        std::istringstream stream{ raw };
+        std::string errs;
+        if (!Json::parseFromStream(rb, stream, &root, &errs) || !root.isObject())
+        {
+            return kDefaultWidth;
+        }
+
+        const auto& node = root["width"];
+        if (!node.isNumeric())
+        {
+            return kDefaultWidth;
+        }
+
+        const auto width = static_cast<float>(node.asDouble());
+        if (!std::isfinite(width) || width < kMinWidth)
+        {
+            return kDefaultWidth;
+        }
+        return width;
+    }
+    catch (...)
+    {
+        // Silent by contract — a corrupt file must not disrupt the panel / terminal.
+        return kDefaultWidth;
+    }
+
+    // Persist the panel width. Rejects anything below kMinWidth: a pane that is
+    // collapsed or hasn't been laid out yet reports ~0, and writing that would
+    // make the next open start from the default instead of the user's size.
+    bool LocalStore::SavePanelWidth(float width) const noexcept
+    try
+    {
+        if (!std::isfinite(width) || width < kMinWidth)
+        {
+            return false;
+        }
+
+        std::error_code ec;
+        create_directories(_layoutFile.parent_path(), ec);
+        if (ec)
+        {
+            return false;
+        }
+
+        Json::Value root{ Json::objectValue };
+        root["width"] = static_cast<double>(width);
+
+        Json::StreamWriterBuilder wb;
+        const auto text = Json::writeString(wb, root);
+
+        std::ofstream out{ _layoutFile, std::ios::binary | std::ios::trunc };
         if (!out)
         {
             return false;

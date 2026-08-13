@@ -2523,7 +2523,25 @@ namespace winrt::TerminalApp::implementation
             if (const auto newPane = _MakePane(BaseContentArgs{ L"enhancedInput" }, nullptr))
             {
                 _UnZoomIfNeeded();
-                activeTab->SplitPaneAtRoot(SplitDirection::Right, newPane);
+                // Compute the split fraction from the persisted pixel width.
+                // _tabContent.ActualWidth() is the total pane area (excludes
+                // tabs / status-bar chrome). If the window hasn't rendered yet
+                // ActualWidth is 0, which would produce a bad fraction — fall
+                // back to the LocalStore default width / a safe denominator.
+                {
+                    using namespace winrt::TerminalApp::implementation;
+                    LocalStore ls;
+                    const auto savedPx = ls.LoadPanelWidth();
+                    const auto totalPx = static_cast<float>(_tabContent.ActualWidth());
+                    float splitSize = LocalStore::kDefaultWidth / 1200.0f; // safe fallback
+                    if (totalPx > LocalStore::kMinWidth * 2.0f)
+                    {
+                        // splitSize = fraction that goes to the NEW (right) pane.
+                        const auto raw = savedPx / totalPx;
+                        splitSize = std::min(std::max(raw, 0.1f), LocalStore::kMaxWidthFraction);
+                    }
+                    activeTab->SplitPaneAtRoot(SplitDirection::Right, newPane, splitSize);
+                }
                 if (const auto& content{ newPane->GetContent() })
                 {
                     content.Focus(FocusState::Programmatic);
