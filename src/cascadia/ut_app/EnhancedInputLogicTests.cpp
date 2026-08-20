@@ -39,6 +39,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(BuiltInGroupCountIs5);
         TEST_METHOD(OnlyClearIsMarkedDanger);
         TEST_METHOD(EveryEntryHasCmdAndTagAndDesc);
+        TEST_METHOD(EveryBuiltInEntryHasFillFalse);
     };
 
     // ---- ComposerLogic ----
@@ -149,6 +150,19 @@ namespace TerminalAppUnitTests
                 VERIFY_IS_FALSE(e.cmd.empty(), NoThrowString().Format(L"empty cmd in group '%s'", std::wstring{ group.title }.c_str()));
                 VERIFY_IS_FALSE(e.tag.empty(), NoThrowString().Format(L"empty tag for '%s'", std::wstring{ e.cmd }.c_str()));
                 VERIFY_IS_FALSE(e.desc.empty(), NoThrowString().Format(L"empty desc for '%s'", std::wstring{ e.cmd }.c_str()));
+            }
+        }
+    }
+
+    void EnhancedInputLogicTests::EveryBuiltInEntryHasFillFalse()
+    {
+        for (const auto& group : kCommandGroups)
+        {
+            for (const auto& e : group.entries)
+            {
+                VERIFY_IS_FALSE(e.fill, NoThrowString().Format(
+                    L"Claude command '%s' must not be fill",
+                    std::wstring{ e.cmd }.c_str()));
             }
         }
     }

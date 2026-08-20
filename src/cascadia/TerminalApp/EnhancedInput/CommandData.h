@@ -14,6 +14,7 @@ namespace winrt::TerminalApp::implementation
         std::wstring_view tag;
         std::wstring_view desc;
         bool danger;
+        bool fill{ false }; // true => TypeToTerminal（不回车）；false => Send
     };
 
     struct CommandGroup
