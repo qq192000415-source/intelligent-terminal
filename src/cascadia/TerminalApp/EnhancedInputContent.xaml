@@ -28,7 +28,8 @@
             <StackPanel HorizontalAlignment="Left"
                         Orientation="Horizontal"
                         Spacing="8">
-                <TextBlock VerticalAlignment="Center"
+                <TextBlock x:Name="PaneTitleText"
+                           VerticalAlignment="Center"
                            FontSize="13"
                            FontWeight="SemiBold"
                            Text="增强输入" />

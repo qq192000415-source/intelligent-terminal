@@ -11,6 +11,7 @@
 #include "EnhancedInput/ComposerLogic.h"
 #include "EnhancedInput/SkillScanner.h"
 #include "EnhancedInput/LocalStore.h"
+#include "EnhancedInput/PaneMode.h"
 
 namespace winrt::TerminalApp::implementation
 {
@@ -20,6 +21,8 @@ namespace winrt::TerminalApp::implementation
         EnhancedInputContent();
 
         void SetLastActiveControl(const Microsoft::Terminal::Control::TermControl& control);
+        void SetMode(InputPaneMode mode);
+        InputPaneMode Mode() const noexcept { return _mode; }
 
         // Queue already-on-disk paths as attachments. Called on the UI thread by
         // TerminalPage's host-level OLE drop routing (elevated drag path). Newline-separated.
@@ -32,7 +35,7 @@ namespace winrt::TerminalApp::implementation
         void Focus(winrt::Windows::UI::Xaml::FocusState reason = winrt::Windows::UI::Xaml::FocusState::Programmatic);
         void Close();
         winrt::Microsoft::Terminal::Settings::Model::INewContentArgs GetNewTerminalArgs(BuildStartupKind kind) const;
-        winrt::hstring Title() { return L"增强输入"; }
+        winrt::hstring Title();
         uint64_t TaskbarState() { return 0; }
         uint64_t TaskbarProgress() { return 0; }
         bool ReadOnly() { return false; }
@@ -51,6 +54,9 @@ namespace winrt::TerminalApp::implementation
 
         // Tracks which tab is active (false = 快捷命令, true = 技能).
         bool _skillTabActive{ false };
+
+        InputPaneMode _mode{ InputPaneMode::Claude };
+        std::span<const CommandGroup> _groups{ kCommandGroups };
 
         // Command entry currently under the pointer; lets the copy-confirmation
         // timer restore the correct description when it reverts.

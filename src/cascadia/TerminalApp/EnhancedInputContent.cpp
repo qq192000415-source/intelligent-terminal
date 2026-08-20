@@ -82,13 +82,58 @@ namespace winrt::TerminalApp::implementation
         _updateSendState();
     }
 
+    void EnhancedInputContent::SetMode(InputPaneMode mode)
+    {
+        if (_mode == mode)
+        {
+            return;
+        }
+        _mode = mode;
+        const auto profile = DefaultUserProfile();
+        const auto roots = RootsFor(mode, profile);
+        _groups = roots.groups;
+        _skillScanner = SkillScanner{ roots.skillsDir };
+        _skillsScanned = false;
+        _allSkills.clear();
+        _hoveredSkill = nullptr;
+        const auto claudeDir = profile.empty() ? std::filesystem::path{ L".claude" } : (profile / L".claude");
+        _localStore = LocalStore{ roots.storeDir, claudeDir };
+        _customCommands = _localStore.Load();
+        _attachmentStore = AttachmentStore{ roots.storeDir };
+        _attachmentStore.CleanupShots();
+
+        if (auto title = PaneTitleText())
+        {
+            title.Text(mode == InputPaneMode::Grok ? L"Grok" : L"增强输入");
+        }
+        if (auto cleanup = CleanupShotsButton())
+        {
+            WUXC::ToolTipService::SetToolTip(
+                cleanup,
+                winrt::box_value(winrt::hstring{
+                    mode == InputPaneMode::Grok ? L"清理截图缓存（~/.grok/shots）" :
+                                                  L"清理截图缓存（~/.claude/shots）" }));
+        }
+
+        _buildCommandCards();
+        _buildCustomCards();
+        _ensureSkillsScanned();
+        // Composer 文本和 _attachments 故意不碰。
+    }
+
+    winrt::hstring EnhancedInputContent::Title()
+    {
+        return _mode == InputPaneMode::Grok ? L"Grok" : L"增强输入";
+    }
+
     // Build command group titles + 2-column card grids, appended to CommandGroupsPanel.
     void EnhancedInputContent::_buildCommandCards()
     {
         auto panel{ CommandGroupsPanel() };
-
+        panel.Children().Clear();
+        _hoveredEntry = nullptr;
         int total = 0;
-        for (const auto& group : kCommandGroups)
+        for (const auto& group : _groups)
         {
             total += static_cast<int>(group.entries.size());
 
@@ -207,15 +252,24 @@ namespace winrt::TerminalApp::implementation
         return reinterpret_cast<const CommandEntry*>(addr);
     }
 
-    // Left click: always Send the command directly. The danger marker (⚠) is now
-    // visual-only — it warns the user but no longer gates the click into Insert.
+    // Left click: fill => TypeToTerminal (insert without Enter); else Send.
+    // Claude table entries all have fill==false, so their left-click behavior is unchanged.
+    // The danger marker (⚠) is visual-only — it warns the user but no longer gates the click.
     void EnhancedInputContent::_onCmdCardClick(const IInspectable& sender, const WUX::RoutedEventArgs&)
     {
         const auto btn{ sender.try_as<WUX::Controls::Button>() };
         if (!btn) return;
         if (const auto* entry{ _entryFromTag(btn.Tag()) })
         {
-            _sink->Send(winrt::hstring{ entry->cmd });
+            const winrt::hstring text{ entry->cmd };
+            if (entry->fill)
+            {
+                _sink->TypeToTerminal(text);
+            }
+            else
+            {
+                _sink->Send(text);
+            }
         }
     }
 
@@ -1413,7 +1467,7 @@ namespace winrt::TerminalApp::implementation
 
     INewContentArgs EnhancedInputContent::GetNewTerminalArgs(const BuildStartupKind /*kind*/) const
     {
-        return BaseContentArgs(L"enhancedInput");
+        return BaseContentArgs(_mode == InputPaneMode::Grok ? L"grokInput" : L"enhancedInput");
     }
 
     winrt::hstring EnhancedInputContent::Icon() const
