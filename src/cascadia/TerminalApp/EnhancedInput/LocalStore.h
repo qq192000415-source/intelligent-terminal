@@ -41,8 +41,11 @@ namespace winrt::TerminalApp::implementation
         static constexpr float kMinWidth = 280.0f;
         static constexpr float kMaxWidthFraction = 0.75f;
 
-        // claudeDir defaults to %USERPROFILE%\.claude; tests inject a temp dir.
-        explicit LocalStore(std::filesystem::path claudeDir = {});
+        // commandsDir 默认 %USERPROFILE%\.claude；layoutDir 为空则与 commandsDir 相同
+        // （保持旧单测：只注入一个 temp 目录时两个文件都在那里）。
+        // Grok 模式传入 (grokDir, claudeDir)，让宽度仍写 Claude 目录。
+        explicit LocalStore(std::filesystem::path commandsDir = {},
+                            std::filesystem::path layoutDir = {});
 
         // Read the whole file and parse the command array. Empty on any failure.
         std::vector<CustomCommand> Load() const noexcept;

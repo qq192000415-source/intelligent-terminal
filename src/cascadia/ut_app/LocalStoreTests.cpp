@@ -33,6 +33,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(LoadMalformedJsonReturnsEmpty);
         TEST_METHOD(LoadDropsRowsWithEmptyCmd);
         TEST_METHOD(SaveCreatesMissingParentDirs);
+        TEST_METHOD(CommandsAndLayoutCanLiveInDifferentDirs);
 
         TEST_METHOD_SETUP(Setup);
         TEST_METHOD_CLEANUP(Cleanup);
@@ -130,5 +131,25 @@ namespace TerminalAppUnitTests
         VERIFY_IS_TRUE(store.Save({ { L"/x", L"", L"" } }));
         VERIFY_IS_TRUE(std::filesystem::exists(store.FilePath()));
         VERIFY_ARE_EQUAL(size_t{ 1 }, store.Load().size());
+    }
+
+    void LocalStoreTests::CommandsAndLayoutCanLiveInDifferentDirs()
+    {
+        const auto cmdDir = _dir / L"grokroot";
+        const auto layoutDir = _dir / L"clauderoot";
+        LocalStore store{ cmdDir, layoutDir };
+        VERIFY_IS_TRUE(store.Save({ { L"/x", L"标签", L"说明" } }));
+        VERIFY_IS_TRUE(store.SavePanelWidth(400.0f));
+
+        VERIFY_IS_TRUE(std::filesystem::exists(cmdDir / L"custom_commands.json"));
+        VERIFY_IS_FALSE(std::filesystem::exists(cmdDir / L"enhanced_input_layout.json"));
+        VERIFY_IS_TRUE(std::filesystem::exists(layoutDir / L"enhanced_input_layout.json"));
+        VERIFY_IS_FALSE(std::filesystem::exists(layoutDir / L"custom_commands.json"));
+
+        const auto loaded = LocalStore{ cmdDir, layoutDir }.Load();
+        VERIFY_ARE_EQUAL(size_t{ 1 }, loaded.size());
+        VERIFY_ARE_EQUAL(std::wstring{ L"/x" }, loaded[0].cmd);
+        // Extra parens: TAEF VERIFY_ARE_EQUAL is a macro and would split on the ctor comma.
+        VERIFY_ARE_EQUAL(400.0f, (LocalStore{ cmdDir, layoutDir }.LoadPanelWidth()));
     }
 }

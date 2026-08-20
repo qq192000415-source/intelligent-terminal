@@ -24,14 +24,18 @@ namespace winrt::TerminalApp::implementation
         return std::filesystem::path{ L".claude" };
     }
 
-    LocalStore::LocalStore(std::filesystem::path claudeDir)
+    LocalStore::LocalStore(std::filesystem::path commandsDir, std::filesystem::path layoutDir)
     {
-        if (claudeDir.empty())
+        if (commandsDir.empty())
         {
-            claudeDir = _defaultClaudeDir();
+            commandsDir = _defaultClaudeDir();
         }
-        _file = claudeDir / L"custom_commands.json";
-        _layoutFile = claudeDir / L"enhanced_input_layout.json";
+        if (layoutDir.empty())
+        {
+            layoutDir = commandsDir;
+        }
+        _file = commandsDir / L"custom_commands.json";
+        _layoutFile = layoutDir / L"enhanced_input_layout.json";
     }
 
     // Read the whole file (UTF-8) and parse a JSON array of {cmd,tag,desc} objects.
