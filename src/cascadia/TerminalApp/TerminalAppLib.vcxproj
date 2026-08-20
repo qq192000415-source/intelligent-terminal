@@ -195,6 +195,7 @@
     <ClInclude Include="EnhancedInput\ITerminalSink.h" />
     <ClInclude Include="EnhancedInput\TerminalSink.h" />
     <ClInclude Include="EnhancedInput\CommandData.h" />
+    <ClInclude Include="EnhancedInput\GrokCommandData.h" />
     <ClInclude Include="EnhancedInput\AttachmentStore.h" />
     <ClInclude Include="EnhancedInput\ComposerLogic.h" />
     <ClInclude Include="EnhancedInput\SkillScanner.h" />

@@ -89,6 +89,9 @@
     <ClInclude Include="EnhancedInput\CommandData.h">
       <Filter>pane</Filter>
     </ClInclude>
+    <ClInclude Include="EnhancedInput\GrokCommandData.h">
+      <Filter>pane</Filter>
+    </ClInclude>
     <ClInclude Include="EnhancedInput\AttachmentStore.h">
       <Filter>pane</Filter>
     </ClInclude>
