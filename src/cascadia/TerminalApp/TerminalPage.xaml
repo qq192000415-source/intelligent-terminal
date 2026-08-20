@@ -217,6 +217,34 @@
                           FontSize="16"
                           Glyph="&#xE756;" />
             </Button>
+            <Button x:Name="GrokInputToggleButton"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    Click="_GrokInputToggleButtonOnClick">
+                <ToolTipService.ToolTip>
+                    <ToolTip>
+                        <StackPanel>
+                            <TextBlock Text="Grok 面板"
+                                       FontFamily="Segoe UI Variable"
+                                       FontSize="12"
+                                       FontWeight="Normal"
+                                       LineHeight="16" />
+                            <TextBlock Text="Alt+G"
+                                       FontFamily="Segoe UI Variable"
+                                       FontSize="12"
+                                       FontWeight="Normal"
+                                       LineHeight="16"
+                                       Opacity="0.7" />
+                        </StackPanel>
+                    </ToolTip>
+                </ToolTipService.ToolTip>
+                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                          FontSize="16"
+                          Glyph="&#xE945;" />
+            </Button>
             </StackPanel>
 
             <!-- Button 2: Diagnostics / Warning — clickable once a fix is armed.

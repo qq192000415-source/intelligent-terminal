@@ -650,6 +650,7 @@
         { "command": "restartConnection", "id": "Terminal.RestartConnection" },
         { "command": { "action": "splitPane", "type": "snippets" }, "id": "Terminal.OpenSnippetsPane", "name": { "key": "SnippetsPaneCommandName" } },
         { "command": { "action": "splitPane", "type": "enhancedInput" }, "id": "Terminal.OpenEnhancedInputPane", "name": "增强输入面板" },
+        { "command": { "action": "splitPane", "type": "grokInput" }, "id": "Terminal.OpenGrokInputPane", "name": "Grok 面板" },
 
         // Clipboard Integration
         { "command": { "action": "copy", "singleLine": false }, "id": "Terminal.CopyToClipboard" },
@@ -763,6 +764,7 @@
         { "keys": "ctrl+shift+/", "id": "Terminal.OpenAgentSessions" },
         { "keys": "ctrl+alt+period", "id": "Terminal.TriggerAutofix" },
         { "keys": "alt+e", "id": "Terminal.OpenEnhancedInputPane" },
+        { "keys": "alt+g", "id": "Terminal.OpenGrokInputPane" },
 
         // Tab Management
         // "command": "closeTab" is unbound by default.

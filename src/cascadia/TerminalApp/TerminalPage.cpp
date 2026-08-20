@@ -2720,18 +2720,28 @@ namespace winrt::TerminalApp::implementation
         _UpdateBottomBarState();
     }
 
-    // Bottom-bar enhanced-input toggle click (Phase 6). Mirrors Alt+E.
-    void TerminalPage::_EnhancedInputToggleButtonOnClick(const winrt::Windows::Foundation::IInspectable& /*sender*/,
-                                                         const winrt::Windows::UI::Xaml::RoutedEventArgs& /*eventArgs*/)
+    // Bottom-bar Claude toggle. Mirrors Alt+E.
+    void TerminalPage::_EnhancedInputToggleButtonOnClick(const IInspectable&, const RoutedEventArgs&)
     {
-        _ToggleEnhancedInputPane();
+        _ToggleEnhancedInputPane(InputPaneMode::Claude);
     }
 
-    // Open the enhanced-input panel on the focused tab, or close it if it's already
-    // there — the single source of truth shared by the bottom-bar button and the
-    // Alt+E keybinding (routed here from _HandleSplitPane). The panel is a right-
-    // docked pane; being split beside a terminal it's never the tab's only pane.
+    // Bottom-bar Grok toggle. Mirrors Alt+G.
+    void TerminalPage::_GrokInputToggleButtonOnClick(const IInspectable&, const RoutedEventArgs&)
+    {
+        _ToggleEnhancedInputPane(InputPaneMode::Grok);
+    }
+
     void TerminalPage::_ToggleEnhancedInputPane()
+    {
+        _ToggleEnhancedInputPane(InputPaneMode::Claude);
+    }
+
+    // Single-instance enhanced-input toggle shared by the bottom-bar buttons
+    // and Alt+E / Alt+G (routed here from _HandleSplitPane). Same mode
+    // collapses; other mode switches in place without close/reopen. Closed
+    // docks a right-column pane in the requested mode.
+    void TerminalPage::_ToggleEnhancedInputPane(InputPaneMode requested)
     {
         const auto activeTab{ _GetFocusedTabImpl() };
         if (!activeTab)
@@ -2739,60 +2749,46 @@ namespace winrt::TerminalApp::implementation
             return;
         }
 
-        // Find an existing EnhancedInputContent pane in this tab.
         std::shared_ptr<Pane> existing{ nullptr };
+        winrt::TerminalApp::EnhancedInputContent existingEi{ nullptr };
         if (const auto rootPane{ activeTab->GetRootPane() })
         {
-            existing = rootPane->WalkTree([](const std::shared_ptr<Pane>& p) -> std::shared_ptr<Pane> {
-                if (p->GetContent().try_as<winrt::TerminalApp::EnhancedInputContent>())
+            existing = rootPane->WalkTree([&](const std::shared_ptr<Pane>& p) -> std::shared_ptr<Pane> {
+                if (auto ei = p->GetContent().try_as<winrt::TerminalApp::EnhancedInputContent>())
                 {
+                    existingEi = ei;
                     return p;
                 }
                 return nullptr;
             });
         }
 
-        if (existing)
+        if (existing && existingEi)
         {
-            // Already open → collapse it. Unzoom first (a zoomed pane must be
-            // restored before its tree changes), then close directly — the same
-            // programmatic-close the agent pane uses (_TeardownAgentPane). We do
-            // NOT route through _HandleClosePaneRequested: this is a toggle
-            // collapse, not a user close, so it must not land on the
-            // restore-last-closed stack (that's reserved for real pane closes).
-            _UnZoomIfNeeded();
-            existing->Close();
+            auto impl = get_self<EnhancedInputContent>(existingEi);
+            if (impl->Mode() == requested)
+            {
+                _UnZoomIfNeeded();
+                existing->Close();
+            }
+            else
+            {
+                impl->SetMode(requested);
+            }
         }
         else
         {
-            // Not open → dock it as the OUTERMOST full-height right column via
-            // SplitPaneAtRoot. The previous code used _SplitPane, which splits
-            // only the ACTIVE pane — so when an agent pane was also open, the
-            // agent's own SplitPaneAtRoot(Down) wrapped the whole tree and the
-            // panel got squeezed into the top-right corner instead of spanning
-            // the full height. Splitting Right at the root makes the panel a
-            // full-height right column regardless of the rest of the tree, and
-            // Tab::SplitPaneAtRoot now docks a later agent pane into the terminal
-            // region beside it (not around it). SplitPaneAtRoot (unlike
-            // _SplitPane) neither unzooms nor focuses the new pane, so do both
-            // explicitly here.
-            if (const auto newPane = _MakePane(BaseContentArgs{ L"enhancedInput" }, nullptr))
+            const auto type = requested == InputPaneMode::Grok ? L"grokInput" : L"enhancedInput";
+            if (const auto newPane = _MakePane(BaseContentArgs{ type }, nullptr))
             {
                 _UnZoomIfNeeded();
-                // Compute the split fraction from the persisted pixel width.
-                // _tabContent.ActualWidth() is the total pane area (excludes
-                // tabs / status-bar chrome). If the window hasn't rendered yet
-                // ActualWidth is 0, which would produce a bad fraction — fall
-                // back to the LocalStore default width / a safe denominator.
                 {
-                    using namespace winrt::TerminalApp::implementation;
                     LocalStore ls;
                     const auto savedPx = ls.LoadPanelWidth();
                     const auto totalPx = static_cast<float>(_tabContent.ActualWidth());
-                    float splitSize = LocalStore::kDefaultWidth / 1200.0f; // safe fallback
+                    float splitSize = LocalStore::kDefaultWidth / 1200.0f;
                     if (totalPx > LocalStore::kMinWidth * 2.0f)
                     {
-                        // splitSize = fraction that goes to the NEW (right) pane.
                         const auto raw = savedPx / totalPx;
                         splitSize = std::min(std::max(raw, 0.1f), LocalStore::kMaxWidthFraction);
                     }
@@ -3063,21 +3059,32 @@ namespace winrt::TerminalApp::implementation
             sessionsBtn.Background(sessionsLit ? kLitOverlay : kTransparent);
         }
 
-        // Enhanced-input toggle (Phase 6): lit when the focused tab has an
-        // EnhancedInputContent pane open. Independent of the agent-pane state above.
+        // Enhanced-input toggles: mutually exclusive. Closed → both dark;
+        // Claude → left button lit; Grok → Grok button lit.
+        bool eiOpen = false;
+        bool grokMode = false;
+        if (focusedTabImpl)
+        {
+            if (const auto rootPane = focusedTabImpl->GetRootPane())
+            {
+                rootPane->WalkTree([&](const std::shared_ptr<Pane>& p) -> bool {
+                    if (auto ei = p->GetContent().try_as<winrt::TerminalApp::EnhancedInputContent>())
+                    {
+                        eiOpen = true;
+                        grokMode = get_self<EnhancedInputContent>(ei)->Mode() == InputPaneMode::Grok;
+                        return true;
+                    }
+                    return false;
+                });
+            }
+        }
         if (auto eiBtn = EnhancedInputToggleButton())
         {
-            bool eiOpen = false;
-            if (focusedTabImpl)
-            {
-                if (const auto rootPane = focusedTabImpl->GetRootPane())
-                {
-                    eiOpen = rootPane->WalkTree([](const std::shared_ptr<Pane>& p) -> bool {
-                        return p->GetContent().try_as<winrt::TerminalApp::EnhancedInputContent>() != nullptr;
-                    });
-                }
-            }
-            eiBtn.Background(eiOpen ? kLitOverlay : kTransparent);
+            eiBtn.Background((eiOpen && !grokMode) ? kLitOverlay : kTransparent);
+        }
+        if (auto grokBtn = GrokInputToggleButton())
+        {
+            grokBtn.Background((eiOpen && grokMode) ? kLitOverlay : kTransparent);
         }
 
         // Swap the toggle icon to match the current pane position.
@@ -9039,14 +9046,13 @@ namespace winrt::TerminalApp::implementation
 
             content = *tasksContent;
         }
-        else if (paneType == L"enhancedInput")
+        else if (paneType == L"enhancedInput" || paneType == L"grokInput")
         {
-            // Single-instance detection + the Alt+E / bottom-bar toggle live in
-            // _ToggleEnhancedInputPane (Phase 6); this branch just builds the content
-            // for that toggle's open path. Phase 2 wires the send channel:
-            // DispatchActionRequested forwards a SendInput action to the active
-            // control (MarkdownPaneContent pattern).
             const auto& enhancedContent{ winrt::make_self<EnhancedInputContent>() };
+            if (paneType == L"grokInput")
+            {
+                enhancedContent->SetMode(InputPaneMode::Grok);
+            }
             enhancedContent->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
             enhancedContent->DispatchActionRequested([weak = get_weak()](const auto& sender, const auto& actionAndArgs) {
                 if (const auto& page{ weak.get() })

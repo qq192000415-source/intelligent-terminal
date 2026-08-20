@@ -20,6 +20,7 @@
 
 #include "WindowsPackageManagerFactory.h"
 #include "../inc/CustomModelProviderUtils.h"
+#include "EnhancedInput/PaneMode.h"
 
 #define DECLARE_ACTION_HANDLER(action) void _Handle##action(const IInspectable& sender, const Microsoft::Terminal::Settings::Model::ActionEventArgs& args);
 
@@ -408,12 +409,15 @@ namespace winrt::TerminalApp::implementation
                                          const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
         void _DiagnosticsButtonOnClick(const winrt::Windows::Foundation::IInspectable& sender,
                                        const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
-        // Enhanced-input panel toggle (Phase 6). The bottom-bar button and the
-        // Alt+E keybinding (via _HandleSplitPane) both route here: closes the
-        // focused tab's EnhancedInputContent pane if present, else opens one.
+        // Enhanced-input panel toggle. Bottom-bar Claude/Grok buttons and
+        // Alt+E / Alt+G (via _HandleSplitPane) route here: same-mode collapses,
+        // other-mode switches in place, closed opens in the requested mode.
         void _EnhancedInputToggleButtonOnClick(const winrt::Windows::Foundation::IInspectable& sender,
                                                const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
+        void _GrokInputToggleButtonOnClick(const winrt::Windows::Foundation::IInspectable& sender,
+                                           const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
         void _ToggleEnhancedInputPane();
+        void _ToggleEnhancedInputPane(InputPaneMode requested);
         // Recomputes the bottom bar's visibility / toggle-lit / diagnostics
         // affordance from the active tab's AgentPaneContent (or absence
         // thereof). Called on tab switch and whenever an AgentPaneContent
