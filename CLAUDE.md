@@ -207,15 +207,17 @@ If upstream adds new SDK-gated APIs, wrap them in `#ifdef NTDDI_WIN11_GE` with a
 The panel is a **right-docked, full-height pane** distinct from the Agent pane (Ctrl+Shift+A) —
 they are intentionally separate and must not be merged.
 
-Design/requirements/progress docs live **outside this repo** in `E:\terminal-dev\docs\`:
-`requirements.md`, `design.md`, `architecture.md`, `implementation-plan.md`, `progress.md`,
-`findings.md`, `upstream-touchpoints.md`, plus `layout-options.html` UI prototype.
+Panel docs live **outside this repo** in `E:\terminal-dev\docs\`. Start with
+`docs/README.md`. Living specs: `claude-input-pane.md` (Alt+E) and
+`grok-input-pane.md` (Alt+G). Progress is `progress.md` (newest on top).
+Old Claude drafts and finished implementation plans are in `docs/archive/`.
 
 Key conventions:
-- `progress.md` is the cross-session source of truth for phase status.
-- Per-phase completion = compiles + manual on-device acceptance per `requirements.md §7` + commit.
-- Command data for the quick-commands palette is authored in `layout-options.html`'s `CMD_GROUPS`
-  and mirrored into `src/cascadia/TerminalApp/EnhancedInput/CommandData.h`.
+- `docs/progress.md` is the cross-session source of truth for status.
+- Done = compiles + on-device acceptance against the living spec +
+  `upstream-touchpoints.md` + a commit on this branch.
+- Claude command table is `EnhancedInput/CommandData.h` (originally mirrored
+  from `docs/layout-options.html`); Grok table is `EnhancedInput/GrokCommandData.h`.
 
 ### Send channel
 
