@@ -25,6 +25,7 @@
     <ClCompile Include="FzfTests.cpp" />
     <ClCompile Include="EnhancedInputLogicTests.cpp" />
     <ClCompile Include="GrokCommandDataTests.cpp" />
+    <ClCompile Include="PaneModeTests.cpp" />
     <ClCompile Include="LocalStoreTests.cpp" />
     <ClCompile Include="SkillScannerTests.cpp" />
     <ClCompile Include="AttachmentStoreTests.cpp" />
