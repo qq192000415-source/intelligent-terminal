@@ -186,9 +186,8 @@
             </Button>
 
             <!-- Enhanced-input panel toggle (Phase 6). Alt+E also toggles it.
-                 Uses the panel's own pane glyph (E756) for a recognizable
-                 "open the input panel" affordance; lit when the pane is open
-                 (background driven by _UpdateBottomBarState). -->
+                 Brand mark (silver 12-ray asterisk); lit when the pane is open
+                 in Claude mode (background driven by _UpdateBottomBarState). -->
             <Button x:Name="EnhancedInputToggleButton"
                     Width="32"
                     Height="32"
@@ -199,7 +198,7 @@
                 <ToolTipService.ToolTip>
                     <ToolTip>
                         <StackPanel>
-                            <TextBlock Text="增强输入面板"
+                            <TextBlock Text="Claude 面板"
                                        FontFamily="Segoe UI Variable"
                                        FontSize="12"
                                        FontWeight="Normal"
@@ -213,9 +212,15 @@
                         </StackPanel>
                     </ToolTip>
                 </ToolTipService.ToolTip>
-                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                          FontSize="16"
-                          Glyph="&#xE756;" />
+                <Image Width="16"
+                       Height="16"
+                       Stretch="Uniform">
+                    <Image.Source>
+                        <SvgImageSource UriSource="ms-appx:///AgentIcons/claude-asterisk.svg"
+                                        RasterizePixelWidth="32"
+                                        RasterizePixelHeight="32" />
+                    </Image.Source>
+                </Image>
             </Button>
             <Button x:Name="GrokInputToggleButton"
                     Width="32"
@@ -241,9 +246,15 @@
                         </StackPanel>
                     </ToolTip>
                 </ToolTipService.ToolTip>
-                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                          FontSize="16"
-                          Glyph="&#xE945;" />
+                <Image Width="16"
+                       Height="16"
+                       Stretch="Uniform">
+                    <Image.Source>
+                        <SvgImageSource UriSource="ms-appx:///AgentIcons/grok.svg"
+                                        RasterizePixelWidth="32"
+                                        RasterizePixelHeight="32" />
+                    </Image.Source>
+                </Image>
             </Button>
             </StackPanel>
 
