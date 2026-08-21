@@ -248,13 +248,8 @@
                 </ToolTipService.ToolTip>
                 <Image Width="16"
                        Height="16"
-                       Stretch="Uniform">
-                    <Image.Source>
-                        <SvgImageSource UriSource="ms-appx:///AgentIcons/grok.svg"
-                                        RasterizePixelWidth="32"
-                                        RasterizePixelHeight="32" />
-                    </Image.Source>
-                </Image>
+                       Stretch="Uniform"
+                       Source="ms-appx:///AgentIcons/grok.png" />
             </Button>
             </StackPanel>
 
