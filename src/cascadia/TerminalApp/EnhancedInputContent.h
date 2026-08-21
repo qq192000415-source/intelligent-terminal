@@ -11,6 +11,7 @@
 #include "EnhancedInput/ComposerLogic.h"
 #include "EnhancedInput/SkillScanner.h"
 #include "EnhancedInput/LocalStore.h"
+#include "EnhancedInput/NoteStore.h"
 #include "EnhancedInput/PaneMode.h"
 
 namespace winrt::TerminalApp::implementation
@@ -52,8 +53,14 @@ namespace winrt::TerminalApp::implementation
         winrt::weak_ref<Microsoft::Terminal::Control::TermControl> _control{ nullptr };
         std::shared_ptr<ITerminalSink> _sink{ nullptr };
 
-        // Tracks which tab is active (false = 快捷命令, true = 技能).
-        bool _skillTabActive{ false };
+        // Palette tab: 快捷命令 / 技能 / 便签.
+        enum class PaletteTab
+        {
+            Commands,
+            Skills,
+            Notes
+        };
+        PaletteTab _paletteTab{ PaletteTab::Commands };
 
         InputPaneMode _mode{ InputPaneMode::Claude };
         std::span<const CommandGroup> _groups{ kCommandGroups };
@@ -89,12 +96,23 @@ namespace winrt::TerminalApp::implementation
         std::vector<CustomCommand> _customCommands;
         const CustomCommand* _hoveredCustom{ nullptr };
 
+        NoteStore _noteStore{};
+        std::vector<Note> _notes;
+        size_t _editingNote{ static_cast<size_t>(-1) };
+        std::wstring _editSnapTitle;
+        std::wstring _editSnapBody;
+        int64_t _pendingNoteClick{ -1 };
+        winrt::Windows::UI::Xaml::DispatcherTimer _noteClickTimer{ nullptr };
+        bool _composerExpanded{ false };
+
         void _updateTargetPill();
         void _buildCommandCards();
 
         // Tab switching
+        void _applyPaletteTab(PaletteTab tab);
         void _onCmdTabClicked(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onSkillTabClicked(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onNotesTabClicked(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
 
         // Command card events — the Button Tag holds a const CommandEntry* cast to IInspectable via boxing
         void _onCmdCardClick(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
@@ -155,6 +173,29 @@ namespace winrt::TerminalApp::implementation
         void _onSkillCardRightTapped(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::RightTappedRoutedEventArgs&);
         void _onSkillCardPointerEntered(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs&);
         void _onSkillCardPointerExited(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs&);
+
+        // --- Notes ---
+        void _rebuildNoteCards();
+        void _openNoteEditor(size_t index);
+        void _showNotesList();
+        bool _persistCurrentNote();
+        bool _notesEditorDirty();
+        void _flashCopied();
+        static std::int64_t _nowUnix();
+        static winrt::hstring _formatNoteTime(std::int64_t updated);
+        void _onNotesSearchChanged(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::Controls::TextChangedEventArgs&);
+        void _onNotesNewClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onNotesBackClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onNotesSaveClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onNotesCopyClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onNotesDeleteClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onNoteCardClick(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onNoteCardDoubleTapped(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::DoubleTappedRoutedEventArgs&);
+        void _onNoteCardRightTapped(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::RightTappedRoutedEventArgs&);
+        void _onNoteClickTimerTick(const Windows::Foundation::IInspectable&, const Windows::Foundation::IInspectable&);
+        void _onComposerToggle(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        safe_void_coroutine _confirmLeaveNotesEditor(PaletteTab next);
+        safe_void_coroutine _confirmDeleteNote();
 
         // --- Composer / 万能输入 (Phase 4) ---
 

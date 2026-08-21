@@ -50,7 +50,7 @@
                     ToolTipService.ToolTip="清理截图缓存（~/.claude/shots）" />
         </Grid>
 
-        <!-- ② 标签栏：快捷命令 | 技能 -->
+        <!-- ② 标签栏：快捷命令 | 技能 | 便签 -->
         <Border Grid.Row="1"
                 BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                 BorderThickness="0,0,0,1">
@@ -75,6 +75,16 @@
                         FontSize="12">
                     <Button.Content>
                         <TextBlock>技能<Run x:Name="SkillCountRun"
+                                     FontSize="10"
+                                     Foreground="{ThemeResource TextFillColorTertiaryBrush}" /></TextBlock>
+                    </Button.Content>
+                </Button>
+                <Button x:Name="NotesTabButton"
+                        Padding="14,8"
+                        Click="_onNotesTabClicked"
+                        FontSize="12">
+                    <Button.Content>
+                        <TextBlock>便签<Run x:Name="NotesCountRun"
                                      FontSize="10"
                                      Foreground="{ThemeResource TextFillColorTertiaryBrush}" /></TextBlock>
                     </Button.Content>
@@ -185,6 +195,109 @@
             </Grid>
         </Grid>
 
+        <!-- 便签页 -->
+        <Grid x:Name="NotesPage"
+              Grid.Row="2"
+              Visibility="Collapsed">
+            <Grid x:Name="NotesListWrap">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0"
+                      Padding="12,8,12,4"
+                      ColumnSpacing="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="NotesSearchBox"
+                             Grid.Column="0"
+                             FontSize="12"
+                             PlaceholderText="搜索标题或正文…"
+                             TextChanged="_onNotesSearchChanged" />
+                    <Button x:Name="NotesNewButton"
+                            Grid.Column="1"
+                            Click="_onNotesNewClick"
+                            Content="＋ 新建"
+                            FontSize="12" />
+                </Grid>
+                <Grid Grid.Row="1">
+                    <ScrollViewer Padding="12,4,12,4"
+                                  HorizontalScrollMode="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="NotesListPanel"
+                                    Spacing="8" />
+                    </ScrollViewer>
+                    <TextBlock x:Name="NotesEmptyHint"
+                               Padding="12,8"
+                               VerticalAlignment="Top"
+                               FontSize="12"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="还没有便签。把常用提示词存在这里。左键填进终端，双击编辑。"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed" />
+                </Grid>
+            </Grid>
+
+            <Grid x:Name="NotesEditor"
+                  Padding="12,8,12,8"
+                  Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Button x:Name="NotesBackButton"
+                        Grid.Row="0"
+                        HorizontalAlignment="Stretch"
+                        Click="_onNotesBackClick"
+                        Content="← 返回列表"
+                        FontSize="12" />
+                <TextBox x:Name="NotesTitleBox"
+                         Grid.Row="1"
+                         Margin="0,8,0,0"
+                         FontSize="12"
+                         PlaceholderText="标题（选填，不填则列表不显示标题）" />
+                <TextBox x:Name="NotesBodyBox"
+                         Grid.Row="2"
+                         Margin="0,8,0,0"
+                         AcceptsReturn="True"
+                         FontSize="12"
+                         PlaceholderText="提示词正文（必填）"
+                         TextWrapping="Wrap" />
+                <TextBlock x:Name="NotesBodyError"
+                           Grid.Row="3"
+                           Margin="0,4,0,0"
+                           FontSize="11"
+                           Foreground="#FFE8686B"
+                           Text="正文不能为空"
+                           Visibility="Collapsed" />
+                <Grid Grid.Row="4"
+                      Margin="0,8,0,0">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="6">
+                        <Button x:Name="NotesSaveButton"
+                                Click="_onNotesSaveClick"
+                                Content="保存"
+                                FontSize="12"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                        <Button x:Name="NotesCopyButton"
+                                Click="_onNotesCopyClick"
+                                Content="复制"
+                                FontSize="12" />
+                    </StackPanel>
+                    <Button x:Name="NotesDeleteButton"
+                            HorizontalAlignment="Right"
+                            Click="_onNotesDeleteClick"
+                            Content="删除"
+                            FontSize="12" />
+                </Grid>
+            </Grid>
+        </Grid>
+
         <!-- ④ 悬停说明栏（常驻，默认透明） -->
         <Border x:Name="HoverDescBar"
                 Grid.Row="3"
@@ -213,12 +326,24 @@
             </Grid>
         </Border>
 
-        <!-- ⑤ Composer（固定底部） -->
+        <!-- ⑤ Composer（默认可折叠、默认收起） -->
         <Border Grid.Row="4"
-                Padding="8,8,8,10"
                 BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                 BorderThickness="0,1,0,0">
-            <StackPanel Spacing="6">
+            <StackPanel>
+                <Button x:Name="ComposerToggle"
+                        Padding="12,8"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="_onComposerToggle"
+                        Content="输入框 ▾ 展开"
+                        FontSize="12" />
+                <StackPanel x:Name="ComposerBody"
+                            Padding="8,0,8,10"
+                            Spacing="6"
+                            Visibility="Collapsed">
                 <!-- 错误条：发送失败时显示，草稿保留 -->
                 <Border x:Name="ErrorBar"
                         Padding="10,6"
@@ -274,6 +399,7 @@
                             IsEnabled="False"
                             Style="{ThemeResource AccentButtonStyle}" />
                 </Grid>
+            </StackPanel>
             </StackPanel>
         </Border>
     </Grid>

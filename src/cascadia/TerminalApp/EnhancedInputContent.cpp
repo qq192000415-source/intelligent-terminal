@@ -9,9 +9,14 @@
 #include <winrt/Windows.Graphics.Imaging.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 
+#include <chrono>
+#include <ctime>
+#include <cwctype>
 #include <fstream>
 
 #include "fzf/fzf.h"
+
+#include <winrt/Windows.UI.Text.h>
 
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Microsoft::Terminal;
@@ -75,6 +80,8 @@ namespace winrt::TerminalApp::implementation
         // Scan skills eagerly so the tab count badge is populated on first open
         // (18 small files — negligible cost). Refresh / filter re-render from this.
         _ensureSkillsScanned();
+        _notes = _noteStore.Load();
+        NotesCountRun().Text(L"  " + winrt::to_hstring(_notes.size()));
         _updateTargetPill();
 
         // Prune old screenshots on startup (architecture §6 double-threshold).
@@ -660,25 +667,51 @@ namespace winrt::TerminalApp::implementation
         CustomForm().Visibility(WUX::Visibility::Collapsed);
     }
 
+    void EnhancedInputContent::_applyPaletteTab(PaletteTab tab)
+    {
+        _paletteTab = tab;
+        const auto vis = WUX::Visibility::Visible;
+        const auto hid = WUX::Visibility::Collapsed;
+        CmdScrollViewer().Visibility(tab == PaletteTab::Commands ? vis : hid);
+        SkillPage().Visibility(tab == PaletteTab::Skills ? vis : hid);
+        NotesPage().Visibility(tab == PaletteTab::Notes ? vis : hid);
+        using FW = winrt::Windows::UI::Text::FontWeights;
+        CmdTabButton().FontWeight(tab == PaletteTab::Commands ? FW::SemiBold() : FW::Normal());
+        SkillTabButton().FontWeight(tab == PaletteTab::Skills ? FW::SemiBold() : FW::Normal());
+        NotesTabButton().FontWeight(tab == PaletteTab::Notes ? FW::SemiBold() : FW::Normal());
+        if (tab == PaletteTab::Skills)
+        {
+            _ensureSkillsScanned();
+        }
+        if (tab == PaletteTab::Notes && NotesEditor().Visibility() != vis)
+        {
+            _rebuildNoteCards();
+        }
+    }
+
     void EnhancedInputContent::_onCmdTabClicked(const IInspectable&, const WUX::RoutedEventArgs&)
     {
-        if (_skillTabActive)
+        if (_paletteTab == PaletteTab::Notes && _editingNote != static_cast<size_t>(-1))
         {
-            _skillTabActive = false;
-            CmdScrollViewer().Visibility(WUX::Visibility::Visible);
-            SkillPage().Visibility(WUX::Visibility::Collapsed);
+            _confirmLeaveNotesEditor(PaletteTab::Commands);
+            return;
         }
+        _applyPaletteTab(PaletteTab::Commands);
     }
 
     void EnhancedInputContent::_onSkillTabClicked(const IInspectable&, const WUX::RoutedEventArgs&)
     {
-        if (!_skillTabActive)
+        if (_paletteTab == PaletteTab::Notes && _editingNote != static_cast<size_t>(-1))
         {
-            _skillTabActive = true;
-            CmdScrollViewer().Visibility(WUX::Visibility::Collapsed);
-            SkillPage().Visibility(WUX::Visibility::Visible);
-            _ensureSkillsScanned(); // lazy first scan — keeps panel first-open fast
+            _confirmLeaveNotesEditor(PaletteTab::Skills);
+            return;
         }
+        _applyPaletteTab(PaletteTab::Skills);
+    }
+
+    void EnhancedInputContent::_onNotesTabClicked(const IInspectable&, const WUX::RoutedEventArgs&)
+    {
+        _applyPaletteTab(PaletteTab::Notes);
     }
 
     void EnhancedInputContent::_ensureSkillsScanned()
@@ -912,6 +945,387 @@ namespace winrt::TerminalApp::implementation
             _copyFeedbackTimer.Stop();
         }
         HoverDescBar().Opacity(0.0);
+    }
+
+    std::int64_t EnhancedInputContent::_nowUnix()
+    {
+        return static_cast<std::int64_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+    }
+
+    winrt::hstring EnhancedInputContent::_formatNoteTime(std::int64_t updated)
+    {
+        if (updated <= 0)
+        {
+            return {};
+        }
+        const auto now = _nowUnix();
+        if (now - updated < 120)
+        {
+            return L"刚刚";
+        }
+        const std::time_t t{ static_cast<std::time_t>(updated) };
+        std::tm local{};
+        if (localtime_s(&local, &t) != 0)
+        {
+            return {};
+        }
+        wchar_t buf[32]{};
+        swprintf_s(buf, L"%02d/%02d %02d:%02d", local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min);
+        return winrt::hstring{ buf };
+    }
+
+    void EnhancedInputContent::_flashCopied()
+    {
+        HoverDescCmd().Text(L"✓");
+        HoverDescText().Text(L"已复制到剪贴板");
+        HoverDescBar().Opacity(1.0);
+        if (!_copyFeedbackTimer)
+        {
+            _copyFeedbackTimer = WUX::DispatcherTimer{};
+            _copyFeedbackTimer.Interval(std::chrono::milliseconds(1200));
+            _copyFeedbackTimer.Tick({ this, &EnhancedInputContent::_onCopyFeedbackTick });
+        }
+        _copyFeedbackTimer.Stop();
+        _copyFeedbackTimer.Start();
+    }
+
+    bool EnhancedInputContent::_notesEditorDirty()
+    {
+        return std::wstring{ NotesTitleBox().Text() } != _editSnapTitle ||
+               std::wstring{ NotesBodyBox().Text() } != _editSnapBody;
+    }
+
+    void EnhancedInputContent::_showNotesList()
+    {
+        _editingNote = static_cast<size_t>(-1);
+        NotesEditor().Visibility(WUX::Visibility::Collapsed);
+        NotesListWrap().Visibility(WUX::Visibility::Visible);
+        _rebuildNoteCards();
+    }
+
+    void EnhancedInputContent::_openNoteEditor(size_t index)
+    {
+        if (index >= _notes.size())
+        {
+            return;
+        }
+        _editingNote = index;
+        NotesTitleBox().Text(_notes[index].title);
+        NotesBodyBox().Text(_notes[index].body);
+        _editSnapTitle = _notes[index].title;
+        _editSnapBody = _notes[index].body;
+        NotesBodyError().Visibility(WUX::Visibility::Collapsed);
+        NotesListWrap().Visibility(WUX::Visibility::Collapsed);
+        NotesEditor().Visibility(WUX::Visibility::Visible);
+        NotesBodyBox().Focus(WUX::FocusState::Programmatic);
+    }
+
+    bool EnhancedInputContent::_persistCurrentNote()
+    {
+        if (_editingNote >= _notes.size())
+        {
+            return false;
+        }
+        std::wstring body{ NotesBodyBox().Text() };
+        const auto first = body.find_first_not_of(L" \t\r\n");
+        if (first == std::wstring::npos)
+        {
+            NotesBodyError().Visibility(WUX::Visibility::Visible);
+            NotesBodyBox().Focus(WUX::FocusState::Programmatic);
+            return false;
+        }
+        NotesBodyError().Visibility(WUX::Visibility::Collapsed);
+        _notes[_editingNote].title = std::wstring{ NotesTitleBox().Text() };
+        _notes[_editingNote].body = std::move(body);
+        _notes[_editingNote].updated = _nowUnix();
+        _editSnapTitle = _notes[_editingNote].title;
+        _editSnapBody = _notes[_editingNote].body;
+        _noteStore.Save(_notes);
+        NotesCountRun().Text(L"  " + winrt::to_hstring(_notes.size()));
+        HoverDescCmd().Text(L"✓");
+        HoverDescText().Text(L"已保存");
+        HoverDescBar().Opacity(1.0);
+        if (!_copyFeedbackTimer)
+        {
+            _copyFeedbackTimer = WUX::DispatcherTimer{};
+            _copyFeedbackTimer.Interval(std::chrono::milliseconds(1200));
+            _copyFeedbackTimer.Tick({ this, &EnhancedInputContent::_onCopyFeedbackTick });
+        }
+        _copyFeedbackTimer.Stop();
+        _copyFeedbackTimer.Start();
+        return true;
+    }
+
+    void EnhancedInputContent::_rebuildNoteCards()
+    {
+        auto panel{ NotesListPanel() };
+        panel.Children().Clear();
+        const std::wstring q{ NotesSearchBox().Text() };
+        std::wstring qLower = q;
+        for (auto& c : qLower)
+        {
+            c = static_cast<wchar_t>(towlower(c));
+        }
+
+        int shown = 0;
+        for (size_t i = 0; i < _notes.size(); ++i)
+        {
+            if (_notes[i].body.empty())
+            {
+                continue;
+            }
+            if (!qLower.empty())
+            {
+                std::wstring hay = _notes[i].title + L" " + _notes[i].body;
+                for (auto& c : hay)
+                {
+                    c = static_cast<wchar_t>(towlower(c));
+                }
+                if (hay.find(qLower) == std::wstring::npos)
+                {
+                    continue;
+                }
+            }
+
+            WUX::Controls::StackPanel cardContent{};
+            cardContent.Spacing(4);
+            if (!_notes[i].title.empty())
+            {
+                WUX::Controls::TextBlock title{};
+                title.Text(_notes[i].title);
+                title.FontSize(13);
+                title.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
+                title.TextWrapping(WUX::TextWrapping::Wrap);
+                cardContent.Children().Append(title);
+            }
+            WUX::Controls::TextBlock body{};
+            body.Text(_notes[i].body);
+            body.FontSize(12);
+            body.Opacity(0.7);
+            body.TextWrapping(WUX::TextWrapping::Wrap);
+            cardContent.Children().Append(body);
+            const auto when = _formatNoteTime(_notes[i].updated);
+            if (!when.empty())
+            {
+                WUX::Controls::TextBlock meta{};
+                meta.Text(when);
+                meta.FontSize(10);
+                meta.Opacity(0.45);
+                cardContent.Children().Append(meta);
+            }
+
+            WUX::Controls::Button btn{};
+            btn.Content(cardContent);
+            btn.HorizontalAlignment(WUX::HorizontalAlignment::Stretch);
+            btn.HorizontalContentAlignment(WUX::HorizontalAlignment::Left);
+            btn.Padding({ 10, 10, 10, 10 });
+            btn.Tag(winrt::box_value(static_cast<uint64_t>(i)));
+            btn.Click({ this, &EnhancedInputContent::_onNoteCardClick });
+            btn.DoubleTapped({ this, &EnhancedInputContent::_onNoteCardDoubleTapped });
+            btn.RightTapped({ this, &EnhancedInputContent::_onNoteCardRightTapped });
+            panel.Children().Append(btn);
+            ++shown;
+        }
+
+        NotesCountRun().Text(L"  " + winrt::to_hstring(_notes.size()));
+        NotesEmptyHint().Visibility(shown == 0 ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+    }
+
+    void EnhancedInputContent::_onNotesSearchChanged(const IInspectable&, const WUX::Controls::TextChangedEventArgs&)
+    {
+        _rebuildNoteCards();
+    }
+
+    void EnhancedInputContent::_onNotesNewClick(const IInspectable&, const WUX::RoutedEventArgs&)
+    {
+        _notes.insert(_notes.begin(), Note{});
+        _openNoteEditor(0);
+    }
+
+    void EnhancedInputContent::_onNotesBackClick(const IInspectable&, const WUX::RoutedEventArgs&)
+    {
+        _confirmLeaveNotesEditor(PaletteTab::Notes);
+    }
+
+    void EnhancedInputContent::_onNotesSaveClick(const IInspectable&, const WUX::RoutedEventArgs&)
+    {
+        _persistCurrentNote();
+    }
+
+    void EnhancedInputContent::_onNotesCopyClick(const IInspectable&, const WUX::RoutedEventArgs&)
+    {
+        const std::wstring body{ NotesBodyBox().Text() };
+        if (body.find_first_not_of(L" \t\r\n") == std::wstring::npos)
+        {
+            NotesBodyError().Visibility(WUX::Visibility::Visible);
+            return;
+        }
+        DataPackage pkg{};
+        pkg.SetText(NotesBodyBox().Text());
+        Clipboard::SetContent(pkg);
+        _flashCopied();
+    }
+
+    void EnhancedInputContent::_onNotesDeleteClick(const IInspectable&, const WUX::RoutedEventArgs&)
+    {
+        _confirmDeleteNote();
+    }
+
+    void EnhancedInputContent::_onNoteCardClick(const IInspectable& sender, const WUX::RoutedEventArgs&)
+    {
+        const auto btn{ sender.try_as<WUX::Controls::Button>() };
+        if (!btn || !btn.Tag())
+        {
+            return;
+        }
+        _pendingNoteClick = static_cast<int64_t>(winrt::unbox_value<uint64_t>(btn.Tag()));
+        if (!_noteClickTimer)
+        {
+            _noteClickTimer = WUX::DispatcherTimer{};
+            _noteClickTimer.Interval(std::chrono::milliseconds(250));
+            _noteClickTimer.Tick({ this, &EnhancedInputContent::_onNoteClickTimerTick });
+        }
+        _noteClickTimer.Stop();
+        _noteClickTimer.Start();
+    }
+
+    void EnhancedInputContent::_onNoteCardDoubleTapped(const IInspectable& sender, const WUXI::DoubleTappedRoutedEventArgs& e)
+    {
+        e.Handled(true);
+        if (_noteClickTimer)
+        {
+            _noteClickTimer.Stop();
+        }
+        _pendingNoteClick = -1;
+        const auto btn{ sender.try_as<WUX::Controls::Button>() };
+        if (!btn || !btn.Tag())
+        {
+            return;
+        }
+        _openNoteEditor(static_cast<size_t>(winrt::unbox_value<uint64_t>(btn.Tag())));
+    }
+
+    void EnhancedInputContent::_onNoteCardRightTapped(const IInspectable& sender, const WUXI::RightTappedRoutedEventArgs& e)
+    {
+        e.Handled(true);
+        const auto btn{ sender.try_as<WUX::Controls::Button>() };
+        if (!btn || !btn.Tag())
+        {
+            return;
+        }
+        const auto idx = static_cast<size_t>(winrt::unbox_value<uint64_t>(btn.Tag()));
+        if (idx >= _notes.size())
+        {
+            return;
+        }
+        DataPackage pkg{};
+        pkg.SetText(winrt::hstring{ _notes[idx].body });
+        Clipboard::SetContent(pkg);
+        _flashCopied();
+    }
+
+    void EnhancedInputContent::_onNoteClickTimerTick(const IInspectable&, const IInspectable&)
+    {
+        if (_noteClickTimer)
+        {
+            _noteClickTimer.Stop();
+        }
+        if (_pendingNoteClick < 0)
+        {
+            return;
+        }
+        const auto idx = static_cast<size_t>(_pendingNoteClick);
+        _pendingNoteClick = -1;
+        if (idx < _notes.size() && _sink)
+        {
+            _sink->TypeToTerminal(winrt::hstring{ _notes[idx].body });
+        }
+    }
+
+    void EnhancedInputContent::_onComposerToggle(const IInspectable&, const WUX::RoutedEventArgs&)
+    {
+        _composerExpanded = !_composerExpanded;
+        ComposerBody().Visibility(_composerExpanded ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+        ComposerToggle().Content(_composerExpanded ? winrt::box_value(L"输入框 ▴ 收起") : winrt::box_value(L"输入框 ▾ 展开"));
+    }
+
+    safe_void_coroutine EnhancedInputContent::_confirmLeaveNotesEditor(PaletteTab next)
+    {
+        auto strong = get_strong();
+        if (_editingNote == static_cast<size_t>(-1))
+        {
+            _applyPaletteTab(next);
+            co_return;
+        }
+
+        const auto bodyView = std::wstring{ NotesBodyBox().Text() };
+        const bool bodyEmpty = bodyView.find_first_not_of(L" \t\r\n") == std::wstring::npos;
+        if (bodyEmpty && _notes[_editingNote].body.empty())
+        {
+            _notes.erase(_notes.begin() + static_cast<std::ptrdiff_t>(_editingNote));
+            _showNotesList();
+            _applyPaletteTab(next);
+            co_return;
+        }
+        if (!_notesEditorDirty())
+        {
+            _showNotesList();
+            _applyPaletteTab(next);
+            co_return;
+        }
+
+        WUX::Controls::ContentDialog dialog;
+        dialog.XamlRoot(XamlRoot());
+        dialog.Title(winrt::box_value(L"未保存的修改"));
+        dialog.Content(winrt::box_value(L"有未保存的修改，要怎样？"));
+        dialog.PrimaryButtonText(L"保存");
+        dialog.SecondaryButtonText(L"不保存离开");
+        dialog.CloseButtonText(L"取消");
+        dialog.DefaultButton(WUX::Controls::ContentDialogButton::Primary);
+        const auto result = co_await dialog.ShowAsync();
+        if (result == WUX::Controls::ContentDialogResult::Primary)
+        {
+            if (!_persistCurrentNote())
+            {
+                co_return;
+            }
+            _showNotesList();
+            _applyPaletteTab(next);
+        }
+        else if (result == WUX::Controls::ContentDialogResult::Secondary)
+        {
+            if (_editingNote < _notes.size() && _notes[_editingNote].body.empty())
+            {
+                _notes.erase(_notes.begin() + static_cast<std::ptrdiff_t>(_editingNote));
+            }
+            _showNotesList();
+            _applyPaletteTab(next);
+        }
+    }
+
+    safe_void_coroutine EnhancedInputContent::_confirmDeleteNote()
+    {
+        auto strong = get_strong();
+        if (_editingNote >= _notes.size())
+        {
+            co_return;
+        }
+        WUX::Controls::ContentDialog dialog;
+        dialog.XamlRoot(XamlRoot());
+        dialog.Title(winrt::box_value(L"删除便签"));
+        dialog.Content(winrt::box_value(L"删除这条便签？此操作不能撤销。"));
+        dialog.PrimaryButtonText(L"删除");
+        dialog.CloseButtonText(L"取消");
+        dialog.DefaultButton(WUX::Controls::ContentDialogButton::Close);
+        const auto result = co_await dialog.ShowAsync();
+        if (result != WUX::Controls::ContentDialogResult::Primary)
+        {
+            co_return;
+        }
+        _notes.erase(_notes.begin() + static_cast<std::ptrdiff_t>(_editingNote));
+        _noteStore.Save(_notes);
+        _showNotesList();
     }
 
     void EnhancedInputContent::SetLastActiveControl(const Control::TermControl& control)
