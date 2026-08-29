@@ -65,7 +65,7 @@ This repository is a **community fork**. Day-to-day work happens here; Microsoft
 **Remotes (after cloning this fork):**
 
 ```text
-origin    https://github.com/yy262579-hash/intelligent-terminal.git   # this fork — push here
+origin    https://github.com/qq192000415-source/intelligent-terminal.git   # this fork — push here
 upstream  https://github.com/microsoft/intelligent-terminal.git      # Microsoft — fetch only
 ```
 
@@ -296,7 +296,7 @@ Building Intelligent Terminal is the same as building Windows Terminal. See the 
 
 ## Feedback
 
-This fork is in an experimental stage. If you have a feature request or find a bug **in the enhanced input pane**, [submit an issue here](https://github.com/yy262579-hash/intelligent-terminal/issues). For upstream Intelligent Terminal issues, use [microsoft/intelligent-terminal](https://github.com/microsoft/intelligent-terminal/issues).
+This fork is in an experimental stage. If you have a feature request or find a bug **in the enhanced input pane**, [submit an issue here](https://github.com/qq192000415-source/intelligent-terminal/issues). For upstream Intelligent Terminal issues, use [microsoft/intelligent-terminal](https://github.com/microsoft/intelligent-terminal/issues).
 
 ### Collecting Logs
 
