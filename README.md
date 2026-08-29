@@ -116,7 +116,7 @@ Everything is configurable through Intelligent Terminal settings, under "Agent" 
 | Setting | Options |
 |---------|---------|
 | Agent and model | GitHub Copilot (default), or any ACP-compatible agent CLI, including custom or local agents. Configurable for both the agent pane and command palette. Each agent pane can also override its model on the fly with `/model`; changing the global setting here overrides every pane. |
-| Local models (BYOM) | Bring your own model through GitHub Copilot or OpenCode using an OpenAI-compatible Chat Completions endpoint. Add a provider under Agent settings with a Base URL and Model ID, then select it from `/model`. API keys aren't stored, so this suits local endpoints like Ollama that don't require one. |
+| Custom providers (BYOK) | Bring your own provider credentials and model through GitHub Copilot or OpenCode using an OpenAI-compatible Chat Completions endpoint. Add a provider under Agent settings with a Base URL, Model ID, and optional API key, then select it from `/model`. API keys are stored in Windows Credential Manager; keyless local endpoints such as Ollama remain supported. |
 | Pane placement | Top, Bottom (default), Left, Right |
 | Error detection | Allows Intelligent Terminal to automatically detect command failures |
 | Error suggestions | Allows Intelligent Terminal to automatically send detected errors to the agent for fix suggestions |
@@ -161,21 +161,24 @@ Inside the agent pane, type `/` to see available commands. Type `/help` at any t
 |---------|-------------|
 | `/agent [id]` | Pick the agent source for this tab. In a WSL pane, the picker includes agents installed on Windows and in that pane's WSL distro; it never offers other distros. |
 | `/clear` | Clear the chat scrollback (keeps the current session) |
+| `/config` | Configure the current agent session using the options your agent exposes. With GitHub Copilot, for example, you can set the mode (agent, plan, or autopilot), model, reasoning effort, and whether it asks for approval before using tools |
 | `/fix [hint]` | Diagnose the active terminal and suggest a fix; add an optional hint to steer it (e.g. `/fix the path looks wrong`) |
 | `/help` | Show the command list |
-| `/model [id]` | Pick the model for this pane; bare `/model` opens a picker, `/model <id>` switches directly |
+| `/model [id]` | Pick the model for this pane; bare `/model` opens a picker of your configured BYOK models, `/model <id>` switches directly |
+| `/move [position]` | Move this tab's agent pane without changing the global setting or other tabs; `/move left\|right\|up\|down` (aliases `l`/`r`/`u`/`d`) |
 | `/new` | Start a fresh agent session (drops history) |
 | `/restart` | Restart the agent with a clean session |
 | `/sessions` | Open agent management (same as <kbd>Ctrl+Shift+/</kbd>) |
 | `/stop` | Cancel the in-flight prompt |
 
-#### Local Models (BYOM)
+#### Custom Providers (BYOK)
 
-Run your agent against a model on your own machine instead of a cloud service. BYOM is supported through GitHub Copilot and OpenCode, using any OpenAI-compatible Chat Completions endpoint. Under Agent settings, add a provider with a Base URL and Model ID, then pick it from the `/model` picker (configured models show as `modelId (BYOM)`). No API key is stored, so a local Ollama model works with no key at all:
+Run your agent against your own provider or a model on your machine. BYOK is supported through GitHub Copilot and OpenCode using an OpenAI-compatible Chat Completions endpoint. Under Agent settings, add a provider with a Base URL, Model ID, and optional API key, then pick it from the `/model` picker (configured models show as `modelId (BYOK)`). API keys are stored in Windows Credential Manager; a local Ollama model still works with no key:
 
 ```text
 Base URL:  http://localhost:11434/v1
 Model ID:  <your local model>
+API key:   <optional>
 ```
 
 ### Agent Management

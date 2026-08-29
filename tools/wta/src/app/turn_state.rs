@@ -111,9 +111,21 @@ impl TurnState {
     pub fn is_in_flight(&self) -> bool {
         match self {
             TurnState::Submitted(_) | TurnState::Streaming { .. } => true,
-            TurnState::Surfaced { end_pending: true, .. } => true,
+            TurnState::Surfaced {
+                end_pending: true, ..
+            } => true,
             _ => false,
         }
+    }
+
+    /// True while an Agent request can still be attributed to this turn.
+    ///
+    /// A surfaced turn may have released its UI busy gate before a follow-up
+    /// permission or clarification request reaches the App event loop. The
+    /// request itself proves the Agent is still waiting; only `Idle` means
+    /// there is no turn left to service.
+    pub fn can_service_agent_request(&self) -> bool {
+        !matches!(self, TurnState::Idle)
     }
 
     /// The surfaced recommendation set, if the outcome is a card.
@@ -158,11 +170,8 @@ impl TurnState {
 
     /// Whether the current turn is an autofix turn.
     pub fn is_autofix(&self) -> bool {
-        self.prompt()
-            .map(|p| p.autofix.is_some())
-            .unwrap_or(false)
+        self.prompt().map(|p| p.autofix.is_some()).unwrap_or(false)
     }
-
 }
 
 #[cfg(test)]
@@ -228,9 +237,7 @@ mod tests {
 
     #[test]
     fn streaming_state_predicates() {
-        let s = TurnState::Streaming {
-            prompt: prompt(),
-        };
+        let s = TurnState::Streaming { prompt: prompt() };
         assert!(!s.is_idle());
         assert!(s.is_streaming());
         assert!(!s.accepts_new_prompt());
@@ -323,5 +330,18 @@ mod tests {
     #[test]
     fn idle_has_no_autofix_generation() {
         assert_eq!(TurnState::Idle.autofix_generation(), None);
+    }
+
+    #[test]
+    fn surfaced_turn_can_service_late_agent_request() {
+        let state = TurnState::Surfaced {
+            prompt: prompt(),
+            outcome: TurnOutcome::ChatTurn,
+            end_pending: false,
+        };
+
+        assert!(!state.is_in_flight());
+        assert!(state.can_service_agent_request());
+        assert!(!TurnState::Idle.can_service_agent_request());
     }
 }

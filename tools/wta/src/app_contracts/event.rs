@@ -1,6 +1,9 @@
 use crossterm::event::{KeyEvent, MouseEvent};
 
-use super::{AcpModelInfo, AvailableAgent, DebugMessage, PermOption, PlanEntry, PreflightResult};
+use super::{
+    AcpModelInfo, AcpSessionCommand, AcpSessionConfigOption, AvailableAgent, DebugMessage,
+    PermOption, PlanEntry, PreflightResult,
+};
 
 pub enum AppEvent {
     Key(KeyEvent),
@@ -24,6 +27,11 @@ pub enum AppEvent {
         load_session_supported: bool,
         image_supported: bool,
     },
+    /// The old helper↔master ACP task has closed its pipe intentionally and
+    /// the stable helper process may start the replacement connection.
+    AgentReconnectReady(crate::protocol::acp::client::AgentReconnectRequest),
+    /// The ACP task exited before it could consume a queued reconnect request.
+    AgentClientFailed,
     SessionAttached {
         tab_id: String,
         session_id: String,
@@ -41,6 +49,36 @@ pub enum AppEvent {
         session_id: String,
         available_models: Vec<AcpModelInfo>,
         current_model_id: Option<String>,
+    },
+    ModelSetCompleted {
+        session_id: String,
+        model: String,
+        pane_override: bool,
+    },
+    ModelSetFailed {
+        session_id: String,
+        model: String,
+        pane_override: bool,
+        message: String,
+    },
+    SessionConfigUpdated {
+        session_id: String,
+        options: Vec<AcpSessionConfigOption>,
+    },
+    SessionCommandsUpdated {
+        session_id: String,
+        commands: Vec<AcpSessionCommand>,
+    },
+    SessionConfigSetCompleted {
+        session_id: String,
+        config_id: String,
+        value: String,
+        model_compat: bool,
+    },
+    SessionConfigSetFailed {
+        session_id: String,
+        config_id: String,
+        message: String,
     },
     TabError {
         tab_id: String,
@@ -73,6 +111,9 @@ pub enum AppEvent {
         failure: crate::protocol::acp::failure::AgentFailure,
         message: String,
     },
+    /// The helper's pipe to wta-master closed. A retained helper reconnects
+    /// its existing immutable binding over the stable pipe.
+    MasterDisconnected,
     AgentSoftStop {
         session_id: String,
         reason: crate::protocol::acp::soft_stop::SoftStopReason,
@@ -216,6 +257,11 @@ pub enum AppEvent {
         wsl_sources: Vec<AvailableAgent>,
     },
     PreflightComplete(PreflightResult),
+    AgentReconnectPreflightComplete {
+        operation_id: String,
+        generation: u64,
+        result: PreflightResult,
+    },
     AgentSessionEvent(crate::agent_sessions::SessionEvent),
     AliveSnapshotLoaded(Vec<crate::session_registry::SessionInfo>),
     AliveSessionAdded(crate::session_registry::SessionInfo),

@@ -1,9 +1,10 @@
 # ACP v1 Support Completion Plan
 
-**Status**: Implementation in progress; Phase 1 core tool details landed locally  
+**Status**: Implementation in progress; Phase 1 core tool details and Phase 4
+select-option support are on `main`; Phase 4 Agent Commands are implemented locally
 **Scope**: `tools/wta`, the agent-pane TUI, and the helper/master ACP bridge  
 **Baseline**: ACP wire `protocolVersion: 1`  
-**Last updated**: 2026-08-12
+**Last updated**: 2026-08-25
 
 ## Summary
 
@@ -55,7 +56,7 @@ additional ACP v1 work after PR #601.
 | Client Terminals | Commands can run in a WT pane or local subprocess. | `outputByteLimit`, retained-output semantics, accurate truncation, final output after kill, and display retention after release. |
 | Session lifecycle | New, load, cancel, and partial list flows exist. | Capability-gated resume, close, delete, list pagination/filtering, and `session_info_update`. |
 | Session config | Model select options are extracted. | Generic select options, boolean options, mode/reasoning/model-config categories, ordering, and dependent option updates. |
-| Agent commands | WTA has its own slash commands. | `available_commands_update` is ignored instead of contributing session-scoped Agent commands. |
+| Agent commands | Session-scoped Agent commands are merged into the slash-command popup. | No remaining stable ACP v1 gap in the current unstructured command surface. |
 | Authentication | CLI-specific login plus first-method post-login authenticate. | Auth-method selection, standard logout, and clearer capability-driven state. |
 | Cancellation | `session/cancel` stops the active prompt locally and notifies the Agent. | Stable request-ID `$/cancel_request` and consistent cancellation of pending reverse requests. |
 | Structured input | Permission cards handle approval choices. | Stable ACP elicitation form and URL modes. |
@@ -124,8 +125,8 @@ merge authorization scopes or synthesize options such as `AllowAlways`.
 
 ### Phase 1: Tool Details follow-up to PR #601
 
-**Implementation status**: Core support is complete on
-`dev/vanzue/acp-tool-details-wave2`.
+**Implementation status**: Core support landed on `main` through PRs #601 and
+#611.
 Standard content, diffs, terminal references/output, rich-content placeholders,
 location lines, collection replacement, persistence compatibility, and
 expanded completed-turn details are covered. A direct file-open action and a
@@ -202,6 +203,16 @@ not currently have a safe file-handler selection model.
 
 ### Phase 4: Generic config options and Agent commands
 
+**Implementation status**: The first Config Options slice is on `main`. WTA
+preserves ordered select options per Session, replaces complete
+snapshots from new/load/update/set responses, exposes a generic `/config`
+two-level picker, and routes `/model` through the standard model option when
+one exists. Agent Commands are implemented locally: complete Session-scoped
+snapshots are merged after WTA-reserved commands, reserved-name collisions stay
+client-owned, commands removed by later snapshots disappear, and popup Enter
+behavior follows explicit completion metadata instead of treating the optional
+ACP input hint as argument cardinality. Boolean options remain a follow-up.
+
 1. Store the complete ordered `configOptions` collection per session.
 2. Render all supported select options, not only the `model` category.
 3. Advertise and render boolean config options after the client UI can round
@@ -219,12 +230,43 @@ not currently have a safe file-handler selection model.
 7. Merge `available_commands_update` into the command popup per session while
    keeping WTA-reserved commands deterministic and collision-safe.
 
+#### Slash-command completion behavior
+
+Every command candidate carries one of four completion behaviors:
+
+| Behavior | Popup Enter result |
+|---|---|
+| `ExecuteImmediately` | Complete and execute the command. |
+| `OpenPicker` | Execute the bare client command and open its picker. |
+| `RequireFreeText` | Complete to `/<name> ` and wait for text input. |
+| `OptionalFreeText` | Complete to `/<name> ` and wait; a second Enter may submit the bare command. |
+
+ACP `input.hint` remains presentation-only ghost text. ACP v1 does not express
+whether unstructured input is required, so an Agent command that advertises it
+defaults to `OptionalFreeText`. `RequireFreeText` is available for command
+registrations that explicitly carry that product-level contract; it is not
+inferred from a command name.
+
+Both free-text behaviors enter a Prepared Command state. The input renderer
+styles the `/<name>` prefix as a command token, while arguments remain ordinary
+editable text. The styling is derived from the current input and Session-scoped
+command registry, so editing the name, deleting the separating whitespace, or
+removing the command from a later snapshot clears the state without a separate
+lifecycle flag.
+
+Client and Agent candidates are ranked together: every prefix match precedes
+every substring-only match while preserving source order within each group.
+This prevents a synthetic Agent prefix such as `/del` → `/delta` from losing
+to an unrelated client substring such as `/model`.
+
 **Exit criteria**
 
 - An Agent can add, remove, reorder, and update options dynamically.
 - Model, reasoning, mode, and boolean settings use one reusable picker/control
   model.
 - Agent slash commands disappear when a later update removes them.
+- Selecting a free-text command never submits the bare command on the same
+  Enter that accepts the popup candidate.
 
 ### Phase 5: Elicitation, authentication, and cancellation
 

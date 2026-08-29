@@ -58,6 +58,7 @@ impl App {
         // these orthogonal fields rather than relying on side effects from a
         // grab-bag helper.
         tab.messages.clear();
+        tab.clear_streaming_thought();
         // Dropping any in-flight responders signals Cancelled back to
         // the agent — appropriate when the user starts a new turn.
         tab.permission.clear();
@@ -126,14 +127,24 @@ impl App {
                     tab.append_agent_chunk(text);
                     true
                 } else {
-                    false
+                    tab.append_thought_chunk(text);
+                    !text.is_empty()
                 }
             }
             (TurnState::Streaming { .. }, ChunkKind::Message) => {
+                if tab.streaming_thought_text().is_some() {
+                    tab.clear_streaming_thought();
+                }
                 tab.append_agent_chunk(text);
                 true
             }
-            (TurnState::Streaming { .. }, ChunkKind::Thought) => false,
+            (TurnState::Streaming { .. }, ChunkKind::Thought) => {
+                if tab.streaming_agent_text().is_some() {
+                    return false;
+                }
+                tab.append_thought_chunk(text);
+                !text.is_empty()
+            }
             // A direct proposal may complete before the agent emits its final
             // message chunks. Keep those chunks visible alongside the card.
             (TurnState::Surfaced { .. }, ChunkKind::Message)
@@ -169,7 +180,7 @@ impl App {
         source: crate::agent_tools::action_proposal::pipe::ProposalPayloadSource,
     ) -> DirectProposalEvaluation {
         use crate::agent_tools::action_proposal::schema::{
-            build_recommendation_set, parse_mcp_proposal_payload, parse_proposal_payload,
+            build_recommendation_set, parse_mcp_action_payload, parse_proposal_payload,
         };
 
         if !self.session_to_tab.contains_key(session_id) {
@@ -183,12 +194,12 @@ impl App {
                 return DirectProposalEvaluation::Duplicate(
                     "a card is already showing for this turn".to_string(),
                 );
-                }
+            }
             TurnState::Idle => {
                 return DirectProposalEvaluation::Stale(
                     "no turn is in flight for this session".to_string(),
-                    );
-                }
+                );
+            }
             TurnState::Submitted(_) | TurnState::Streaming { .. } => {}
         }
 
@@ -217,8 +228,8 @@ impl App {
             crate::agent_tools::action_proposal::pipe::ProposalPayloadSource::Cli => {
                 parse_proposal_payload(payload.as_bytes())
             }
-            crate::agent_tools::action_proposal::pipe::ProposalPayloadSource::Mcp => {
-                parse_mcp_proposal_payload(payload.as_bytes(), is_autofix)
+            crate::agent_tools::action_proposal::pipe::ProposalPayloadSource::Mcp(tool) => {
+                parse_mcp_action_payload(tool, payload.as_bytes(), is_autofix)
             }
         };
         let wire = match wire {
@@ -311,7 +322,7 @@ impl App {
                     retryable: false,
                 }
             }
-            }
+        }
     }
 
     pub(super) fn commit_terminal_action_proposal(&mut self, proposal_id: &str) -> bool {
@@ -339,12 +350,12 @@ impl App {
                 "direct_proposal_fix",
             );
         } else {
-                self.turn_surface_recommendation(
+            self.turn_surface_recommendation(
                 &pending.session_id,
                 pending.recommendations,
                 "direct_proposal",
-                );
-            }
+            );
+        }
         self.session_tab_mut(&pending.session_id)
             .active_direct_proposal_id = Some(proposal_id.to_string());
         true
@@ -403,11 +414,7 @@ impl App {
                 outcome: TurnOutcome::Recommendation(recommendations),
                 end_pending: true,
                 ..
-            } => Some((
-                format_recommendations_for_chat(recommendations),
-                None,
-                true,
-            )),
+            } => Some((format_recommendations_for_chat(recommendations), None, true)),
             TurnState::Surfaced {
                 outcome:
                     TurnOutcome::ResolvedRecommendation {
@@ -416,11 +423,7 @@ impl App {
                     },
                 end_pending: true,
                 ..
-            } => Some((
-                summary.clone(),
-                Some(trailing_marker.clone()),
-                false,
-            )),
+            } => Some((summary.clone(), Some(trailing_marker.clone()), false)),
             TurnState::Surfaced {
                 end_pending: true, ..
             } => {
@@ -495,7 +498,12 @@ impl App {
     }
 
     fn turn_close_finalize_autofix_text(&mut self, session_id: &str) {
-        if !self.session_tab(session_id).active_agent_text().trim().is_empty() {
+        if !self
+            .session_tab(session_id)
+            .active_agent_text()
+            .trim()
+            .is_empty()
+        {
             self.turn_surface_explain(session_id, "autofix_text");
             self.turn_release_end_pending(session_id);
             return;
@@ -529,7 +537,11 @@ impl App {
     }
 
     fn turn_close_finalize_chat(&mut self, session_id: &str) {
-        let response_chars = self.session_tab(session_id).active_agent_text().chars().count();
+        let response_chars = self
+            .session_tab(session_id)
+            .active_agent_text()
+            .chars()
+            .count();
         self.log_selection_phase_for(
             session_id,
             "assistant_text",
@@ -603,6 +615,7 @@ impl App {
     fn turn_clear_agent_activity(&mut self, session_id: &str) {
         let tab = self.session_tab_mut(session_id);
         tab.activity_frame = 0;
+        tab.clear_streaming_thought();
     }
 
     /// User pressed Enter while a card was visible — dispatch the selected
@@ -702,8 +715,9 @@ impl App {
         } else {
             // AgentMessageEnd already committed this turn while the card was
             // visible, so only annotate that existing history entry.
-            if let Some(last) = tab.completed_turns.last_mut() {
+            if let Some((index, last)) = tab.completed_turns.iter_mut().enumerate().next_back() {
                 last.trailing_marker = Some(marker);
+                tab.invalidate_completed_turn_height(index);
             }
             TurnOutcome::Empty
         };
@@ -797,11 +811,7 @@ impl App {
                     Some(_) => t!("chat.autofix_prompt_label").into_owned(),
                     None => prompt.text.clone(),
                 };
-                Some((
-                    label,
-                    Some(summary.clone()),
-                    trailing_marker.clone(),
-                ))
+                Some((label, Some(summary.clone()), trailing_marker.clone()))
             }
             _ => None,
         };
@@ -826,8 +836,9 @@ impl App {
             });
             tab.scroll_to_bottom();
         } else if annotate_card {
-            if let Some(last) = tab.completed_turns.last_mut() {
+            if let Some((index, last)) = tab.completed_turns.iter_mut().enumerate().next_back() {
                 last.trailing_marker = Some(canceled_marker);
+                tab.invalidate_completed_turn_height(index);
             }
         }
         tab.autofix.pane_id = None;
@@ -836,6 +847,7 @@ impl App {
         tab.recommendation_focus = RecommendationFocus::Button;
         tab.rec_scroll.reset();
         tab.activity_frame = 0;
+        tab.clear_streaming_thought();
         tab.user_input.clear();
         tab.turn = TurnState::Idle;
         tab.pending_terminal_action_proposal = None;
@@ -881,8 +893,9 @@ impl App {
         tab.recommendation_focus = RecommendationFocus::Button;
         tab.rec_scroll.reset();
         tab.selection_visible_pending = true;
-        tab.selected_completed_turn_idx = None;
+        tab.clear_completed_turn_selection();
         tab.activity_frame = 0;
+        tab.clear_streaming_thought();
         tab.turn = TurnState::Surfaced {
             prompt,
             outcome: TurnOutcome::Recommendation(recommendations),
@@ -946,6 +959,7 @@ impl App {
         tab.recommendation_focus = RecommendationFocus::Button;
         tab.selection_visible_pending = true;
         tab.activity_frame = 0;
+        tab.clear_streaming_thought();
         tab.turn = TurnState::Surfaced {
             prompt,
             outcome: TurnOutcome::Recommendation(recommendations),
@@ -960,11 +974,7 @@ impl App {
 
     /// Surface an autofix Explain answer as a chat turn + bottom-bar
     /// Suggested indicator.
-    fn turn_surface_explain(
-        &mut self,
-        session_id: &str,
-        phase_name: &str,
-    ) {
+    fn turn_surface_explain(&mut self, session_id: &str, phase_name: &str) {
         // Defensive: only autofix turns surface an explain answer here.
         let prompt = self.session_tab(session_id).turn.prompt();
         let Some(prompt) = prompt.filter(|prompt| prompt.autofix.is_some()) else {
@@ -974,13 +984,15 @@ impl App {
         // explanation, but skip the bottom-bar /
         // suggested-pane side effects below.
         let bar_pane = prompt.context.target_pane_id().map(str::to_string);
-        let response_chars = self.session_tab(session_id).active_agent_text().chars().count();
+        let response_chars = self
+            .session_tab(session_id)
+            .active_agent_text()
+            .chars()
+            .count();
         self.log_selection_phase_for(
             session_id,
             phase_name,
-            &format!(
-                "pane={bar_pane:?} chars={response_chars}"
-            ),
+            &format!("pane={bar_pane:?} chars={response_chars}"),
         );
 
         let turn_prompt_label = t!("chat.autofix_prompt_label").into_owned();
@@ -1021,6 +1033,7 @@ impl App {
         tab.recommendation_focus = RecommendationFocus::Button;
         tab.rec_scroll.reset();
         tab.activity_frame = 0;
+        tab.clear_streaming_thought();
         tab.turn = TurnState::Surfaced {
             prompt,
             outcome: TurnOutcome::ChatTurn,
