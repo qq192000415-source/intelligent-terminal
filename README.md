@@ -6,9 +6,21 @@
 
 # Welcome to the Intelligent Terminal repo
 
+> [!IMPORTANT]
+> **This is an unofficial community fork** of [microsoft/intelligent-terminal](https://github.com/microsoft/intelligent-terminal). It is **not** affiliated with, endorsed by, or sponsored by Microsoft.
+>
+> 这是微软 [Intelligent Terminal](https://github.com/microsoft/intelligent-terminal) 的**非官方社区 fork**（MIT），**与微软无关**。
+>
+> Extra feature: a right-side **Claude / Grok enhanced input pane** (`Alt+E` / `Alt+G`, same column, not both at once). This is **not** the built-in Agent pane (`Ctrl+Shift+.` / `Ctrl+Shift+/`).
+>
+> 本 fork 额外功能：右侧 **Claude / Grok 增强输入面板**（`Alt+E` / `Alt+G`，同一列、不能并排）。和官方 Agent 面板不是一套。
+>
+> License remains MIT. Keep the Microsoft copyright notice. Microsoft, Claude, and Grok names and marks belong to their owners.
+
 <details>
   <summary><strong>Table of Contents</strong></summary>
 
+- [This fork](#this-fork)
 - [What is Intelligent Terminal?](#what-is-intelligent-terminal)
 - [Installing and running Intelligent Terminal](#installing-and-running-intelligent-terminal)
   - [Microsoft Store](#microsoft-store-recommended)
@@ -35,6 +47,39 @@
 </details>
 
 <br />
+
+## This fork
+
+This repository is a **community fork**. Day-to-day work happens here; Microsoft's repo is only used as upstream.
+
+| | Claude pane | Grok pane | Agent pane (upstream) |
+|---|---|---|---|
+| Open | <kbd>Alt+E</kbd> or bottom-bar Claude button | <kbd>Alt+G</kbd> or bottom-bar Grok button | <kbd>Ctrl+Shift+.</kbd> |
+| Layout | Right column | Same column (cannot sit side-by-side with Claude) | Independent |
+| Close | Same shortcut again | Same shortcut again | Same shortcut again |
+
+- Claude: 6 groups / 29 commands. Grok: 7 groups / 61 commands. Shared notes tab in the pane.
+- Code: `src/cascadia/TerminalApp/EnhancedInput/` plus `EnhancedInputContent.*`.
+- Build: same as upstream — see [Building the Code](#building-the-code) and [quick-start-local-dev](doc/quick-start-local-dev.md).
+
+**Remotes (after cloning this fork):**
+
+```text
+origin    https://github.com/yy262579-hash/intelligent-terminal.git   # this fork — push here
+upstream  https://github.com/microsoft/intelligent-terminal.git      # Microsoft — fetch only
+```
+
+```powershell
+git remote add upstream https://github.com/microsoft/intelligent-terminal.git
+git fetch upstream
+git merge upstream/main
+# resolve conflicts if any, then:
+git push origin HEAD
+```
+
+Do **not** `git push` Microsoft. Do **not** publish signing `.pfx` files, crash dumps, or a local `vcpkg/` tree.
+
+---
 
 ## What is Intelligent Terminal?
 
@@ -251,7 +296,7 @@ Building Intelligent Terminal is the same as building Windows Terminal. See the 
 
 ## Feedback
 
-Intelligent Terminal is in an experimental stage. If you have a feature request or find a bug, [submit an issue](https://github.com/microsoft/intelligent-terminal/issues) on the GitHub repository.
+This fork is in an experimental stage. If you have a feature request or find a bug **in the enhanced input pane**, [submit an issue here](https://github.com/yy262579-hash/intelligent-terminal/issues). For upstream Intelligent Terminal issues, use [microsoft/intelligent-terminal](https://github.com/microsoft/intelligent-terminal/issues).
 
 ### Collecting Logs
 
