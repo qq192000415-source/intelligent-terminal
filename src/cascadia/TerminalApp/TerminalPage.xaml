@@ -251,6 +251,40 @@
                        Stretch="Uniform"
                        Source="ms-appx:///AgentIcons/grok.png" />
             </Button>
+            <Button x:Name="PluginMarketplaceToggleButton"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    Click="_PluginMarketplaceToggleButtonOnClick">
+                <ToolTipService.ToolTip>
+                    <ToolTip>
+                        <StackPanel>
+                            <TextBlock Text="插件"
+                                       FontFamily="Segoe UI Variable"
+                                       FontSize="12"
+                                       FontWeight="Normal"
+                                       LineHeight="16" />
+                            <TextBlock Text="Alt+P"
+                                       FontFamily="Segoe UI Variable"
+                                       FontSize="12"
+                                       FontWeight="Normal"
+                                       LineHeight="16"
+                                       Opacity="0.7" />
+                        </StackPanel>
+                    </ToolTip>
+                </ToolTipService.ToolTip>
+                <Image Width="16"
+                       Height="16"
+                       Stretch="Uniform">
+                    <Image.Source>
+                        <SvgImageSource UriSource="ms-appx:///AgentIcons/plug-circle.svg"
+                                        RasterizePixelWidth="32"
+                                        RasterizePixelHeight="32" />
+                    </Image.Source>
+                </Image>
+            </Button>
             </StackPanel>
 
             <!-- Button 2: Diagnostics / Warning — clickable once a fix is armed.

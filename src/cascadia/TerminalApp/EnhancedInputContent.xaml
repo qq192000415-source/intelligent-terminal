@@ -51,7 +51,8 @@
         </Grid>
 
         <!-- ② 标签栏：快捷命令 | 技能 | 便签 -->
-        <Border Grid.Row="1"
+        <Border x:Name="PaletteTabBar"
+                Grid.Row="1"
                 BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                 BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal"
@@ -327,7 +328,8 @@
         </Border>
 
         <!-- ⑤ Composer（默认可折叠、默认收起） -->
-        <Border Grid.Row="4"
+        <Border x:Name="ComposerBar"
+                Grid.Row="4"
                 BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                 BorderThickness="0,1,0,0">
             <StackPanel>
@@ -402,5 +404,239 @@
             </StackPanel>
             </StackPanel>
         </Border>
+
+        <!-- 插件市场（InputPaneMode::Plugins）。与命令/技能/Composer 互斥。 -->
+        <Grid x:Name="PluginMarketplaceRoot"
+              Grid.Row="1"
+              Grid.RowSpan="4"
+              Padding="14,8,14,12"
+              Visibility="Collapsed">
+            <Grid x:Name="PluginMarketHome">
+                <ScrollViewer HorizontalScrollMode="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="12">
+                        <TextBlock FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   Text="先装 GitHub 云端存档。其它插件以后用同一套安装 → 登录。"
+                                   TextWrapping="Wrap" />
+                        <TextBlock FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   Opacity="0.7"
+                                   Text="已安装" />
+                        <Border Padding="8"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                CornerRadius="8">
+                            <TextBlock x:Name="PluginInstalledHint"
+                                       FontSize="12"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       Text="还没有插件。从下面点「安装」开始。" />
+                        </Border>
+                        <TextBlock FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   Opacity="0.7"
+                                   Text="公开" />
+                        <Grid Padding="10"
+                              Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                              ColumnSpacing="10"
+                              CornerRadius="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Text="GitHub 云端存档" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="把文件保存到网上。换电脑登录同一个号就能取回。"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button x:Name="PluginGithubInstallButton"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Click="_onPluginGithubInstall"
+                                    Content="安装"
+                                    FontSize="12"
+                                    Style="{ThemeResource AccentButtonStyle}" />
+                        </Grid>
+                        <Grid Padding="10"
+                              Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                              CornerRadius="8"
+                              Opacity="0.55">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Text="Gmail" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="以后同一套安装 → 登录" />
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Click="_onPluginSoonClick"
+                                    Content="即将推出"
+                                    FontSize="11" />
+                        </Grid>
+                        <Grid Padding="10"
+                              Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                              CornerRadius="8"
+                              Opacity="0.55">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Text="Slack" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="以后同一套安装 → 登录" />
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Click="_onPluginSoonClick"
+                                    Content="即将推出"
+                                    FontSize="11" />
+                        </Grid>
+                        <TextBlock x:Name="PluginHomeStatus"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid x:Name="PluginWizardRoot"
+                  Background="{ThemeResource UnfocusedBorderBrush}"
+                  Visibility="Collapsed">
+                <StackPanel VerticalAlignment="Top"
+                            Spacing="12">
+                    <TextBlock x:Name="PluginWizardTitle"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               Text="这台电脑还没连上 GitHub" />
+                    <TextBlock x:Name="PluginWizardLead"
+                               FontSize="13"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="按从来没登过设计。不需要记命令。"
+                               TextWrapping="Wrap" />
+                    <StackPanel x:Name="PluginWizardStep0"
+                                Spacing="8">
+                        <Button HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Click="_onPluginHasAccount"
+                                Padding="12,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="我已经有 GitHub 账号" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="下一步用浏览器登录，看清右上角是不是你的号" />
+                            </StackPanel>
+                        </Button>
+                        <Button HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Click="_onPluginNoAccount"
+                                Padding="12,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="还没有账号" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="先去 GitHub 注册（邮箱、密码、验证码），回来再登录" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <StackPanel x:Name="PluginWizardStep1"
+                                Spacing="8"
+                                Visibility="Collapsed">
+                        <TextBlock FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="真机会打开 github.com/signup。用邮箱、密码、验证码即可。不要填 token 或 SSH。" />
+                        <Button Click="_onPluginOpenSignup"
+                                Content="去注册"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                        <Button Click="_onPluginSignupDone"
+                                Content="我注册好了，去登录" />
+                    </StackPanel>
+                    <StackPanel x:Name="PluginWizardStep2"
+                                Spacing="8"
+                                Visibility="Collapsed">
+                        <TextBlock FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="请看网页右上角头像。必须是你自己的号。登错就先退出再登，不要点授权。" />
+                        <Button Click="_onPluginOpenLogin"
+                                Content="打开 GitHub 登录"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                        <Button Click="_onPluginLoginDone"
+                                Content="我登录好了" />
+                    </StackPanel>
+                    <StackPanel x:Name="PluginWizardStep3"
+                                Spacing="8"
+                                Visibility="Collapsed">
+                        <Button HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Click="_onPluginNewRepo"
+                                Padding="12,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="新建云端仓库（推荐）" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="默认私有。第一期只记下选择，下一期才真正创建。" />
+                            </StackPanel>
+                        </Button>
+                        <Button HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Click="_onPluginExistingRepo"
+                                Padding="12,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="连到已有仓库" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="换电脑取回时用。" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <StackPanel x:Name="PluginWizardStep4"
+                                Spacing="8"
+                                Visibility="Collapsed">
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0"
+                                    Click="_onPluginSave"
+                                    Content="保存一版"
+                                    HorizontalAlignment="Stretch" />
+                            <Button Grid.Column="1"
+                                    Click="_onPluginUpload"
+                                    Content="上传到云端"
+                                    HorizontalAlignment="Stretch" />
+                            <Button Grid.Column="2"
+                                    Click="_onPluginDownload"
+                                    Content="从云端取回"
+                                    HorizontalAlignment="Stretch" />
+                        </Grid>
+                        <TextBlock x:Name="PluginWizardStatus"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap" />
+                        <Button Click="_onPluginWizardBackHome"
+                                Content="回到插件页" />
+                    </StackPanel>
+                    <Button x:Name="PluginWizardClose"
+                            Click="_onPluginWizardBackHome"
+                            Content="关闭向导" />
+                </StackPanel>
+            </Grid>
+        </Grid>
     </Grid>
 </UserControl>

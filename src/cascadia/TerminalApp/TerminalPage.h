@@ -421,6 +421,8 @@ namespace winrt::TerminalApp::implementation
                                                const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
         void _GrokInputToggleButtonOnClick(const winrt::Windows::Foundation::IInspectable& sender,
                                            const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
+        void _PluginMarketplaceToggleButtonOnClick(const winrt::Windows::Foundation::IInspectable& sender,
+                                                   const winrt::Windows::UI::Xaml::RoutedEventArgs& eventArgs);
         void _ToggleEnhancedInputPane();
         void _ToggleEnhancedInputPane(InputPaneMode requested);
         // Recomputes the bottom bar's visibility / toggle-lit / diagnostics

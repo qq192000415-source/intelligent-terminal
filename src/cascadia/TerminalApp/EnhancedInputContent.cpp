@@ -96,6 +96,13 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         _mode = mode;
+        _applyModeChrome();
+        if (mode == InputPaneMode::Plugins)
+        {
+            _setPluginHomeChrome();
+            return;
+        }
+
         const auto profile = DefaultUserProfile();
         const auto roots = RootsFor(mode, profile);
         _groups = roots.groups;
@@ -130,6 +137,10 @@ namespace winrt::TerminalApp::implementation
 
     winrt::hstring EnhancedInputContent::Title()
     {
+        if (_mode == InputPaneMode::Plugins)
+        {
+            return L"插件";
+        }
         return _mode == InputPaneMode::Grok ? L"Grok" : L"增强输入";
     }
 
@@ -1864,6 +1875,14 @@ namespace winrt::TerminalApp::implementation
 
     void EnhancedInputContent::Focus(WUX::FocusState reason)
     {
+        if (_mode == InputPaneMode::Plugins)
+        {
+            if (auto btn = PluginGithubInstallButton())
+            {
+                btn.Focus(reason);
+                return;
+            }
+        }
         Composer().Focus(reason);
     }
 
@@ -1881,13 +1900,300 @@ namespace winrt::TerminalApp::implementation
 
     INewContentArgs EnhancedInputContent::GetNewTerminalArgs(const BuildStartupKind /*kind*/) const
     {
-        return BaseContentArgs(_mode == InputPaneMode::Grok ? L"grokInput" : L"enhancedInput");
+        return BaseContentArgs(TypeFor(_mode));
     }
 
     winrt::hstring EnhancedInputContent::Icon() const
     {
         static constexpr std::wstring_view glyph{ L"\xe756" };
         return winrt::hstring{ glyph };
+    }
+
+    void EnhancedInputContent::_applyModeChrome()
+    {
+        const bool plugins = _mode == InputPaneMode::Plugins;
+        const auto hide = plugins ? WUX::Visibility::Collapsed : WUX::Visibility::Visible;
+        const auto show = plugins ? WUX::Visibility::Visible : WUX::Visibility::Collapsed;
+        if (auto el = PaletteTabBar())
+        {
+            el.Visibility(hide);
+        }
+        if (auto el = HoverDescBar())
+        {
+            el.Visibility(hide);
+        }
+        if (auto el = ComposerBar())
+        {
+            el.Visibility(hide);
+        }
+        if (auto el = CleanupShotsButton())
+        {
+            el.Visibility(hide);
+        }
+        if (auto el = PluginMarketplaceRoot())
+        {
+            el.Visibility(show);
+        }
+        if (plugins)
+        {
+            if (auto el = CmdScrollViewer())
+            {
+                el.Visibility(WUX::Visibility::Collapsed);
+            }
+            if (auto el = SkillPage())
+            {
+                el.Visibility(WUX::Visibility::Collapsed);
+            }
+            if (auto el = NotesPage())
+            {
+                el.Visibility(WUX::Visibility::Collapsed);
+            }
+            if (auto title = PaneTitleText())
+            {
+                title.Text(L"插件");
+            }
+            if (auto wiz = PluginWizardRoot())
+            {
+                wiz.Visibility(WUX::Visibility::Collapsed);
+            }
+            if (auto home = PluginMarketHome())
+            {
+                home.Visibility(WUX::Visibility::Visible);
+            }
+        }
+        else
+        {
+            _applyPaletteTab(_paletteTab);
+        }
+    }
+
+    void EnhancedInputContent::_setPluginHomeChrome()
+    {
+        if (auto hint = PluginInstalledHint())
+        {
+            hint.Text(_pluginGithubInstalled ? L"GitHub 云端存档已安装。" : L"还没有插件。从下面点「安装」开始。");
+        }
+        if (auto btn = PluginGithubInstallButton())
+        {
+            if (_pluginGithubLoggedIn)
+            {
+                btn.Content(winrt::box_value(L"打开"));
+            }
+            else if (_pluginGithubInstalled)
+            {
+                btn.Content(winrt::box_value(L"继续登录"));
+            }
+            else
+            {
+                btn.Content(winrt::box_value(L"安装"));
+            }
+        }
+    }
+
+    void EnhancedInputContent::_showPluginWizard(int step)
+    {
+        if (auto home = PluginMarketHome())
+        {
+            home.Visibility(WUX::Visibility::Collapsed);
+        }
+        if (auto wiz = PluginWizardRoot())
+        {
+            wiz.Visibility(WUX::Visibility::Visible);
+        }
+        const auto vis0 = step == 0 ? WUX::Visibility::Visible : WUX::Visibility::Collapsed;
+        const auto vis1 = step == 1 ? WUX::Visibility::Visible : WUX::Visibility::Collapsed;
+        const auto vis2 = step == 2 ? WUX::Visibility::Visible : WUX::Visibility::Collapsed;
+        const auto vis3 = step == 3 ? WUX::Visibility::Visible : WUX::Visibility::Collapsed;
+        const auto vis4 = step == 4 ? WUX::Visibility::Visible : WUX::Visibility::Collapsed;
+        if (auto el = PluginWizardStep0())
+        {
+            el.Visibility(vis0);
+        }
+        if (auto el = PluginWizardStep1())
+        {
+            el.Visibility(vis1);
+        }
+        if (auto el = PluginWizardStep2())
+        {
+            el.Visibility(vis2);
+        }
+        if (auto el = PluginWizardStep3())
+        {
+            el.Visibility(vis3);
+        }
+        if (auto el = PluginWizardStep4())
+        {
+            el.Visibility(vis4);
+        }
+        if (auto title = PluginWizardTitle())
+        {
+            switch (step)
+            {
+            case 1:
+                title.Text(L"先注册一个账号");
+                break;
+            case 2:
+                title.Text(L"登录 GitHub");
+                break;
+            case 3:
+                title.Text(L"存到哪里？");
+                break;
+            case 4:
+                title.Text(L"可以开始存档了");
+                break;
+            default:
+                title.Text(L"这台电脑还没连上 GitHub");
+                break;
+            }
+        }
+        if (auto lead = PluginWizardLead())
+        {
+            switch (step)
+            {
+            case 1:
+                lead.Text(L"用邮箱、密码、验证码即可。");
+                break;
+            case 2:
+                lead.Text(L"必须用你自己的号。登错先退出再登。");
+                break;
+            case 3:
+                lead.Text(L"第一期只记下你的选择，下一期才会真正建仓库。");
+                break;
+            case 4:
+                lead.Text(L"三个键下一期才会真正连上 GitHub。现在按下会说明，不会假装成功。");
+                break;
+            default:
+                lead.Text(L"按从来没登过设计。不需要记命令。");
+                break;
+            }
+        }
+    }
+
+    void EnhancedInputContent::_launchUri(std::wstring_view uri)
+    {
+        try
+        {
+            Windows::Foundation::Uri u{ winrt::hstring{ uri } };
+            winrt::Windows::System::Launcher::LaunchUriAsync(u);
+        }
+        catch (...)
+        {
+            if (auto st = PluginHomeStatus())
+            {
+                st.Text(L"打不开浏览器。请自己打开 GitHub 网站。");
+            }
+        }
+    }
+
+    void EnhancedInputContent::_onPluginGithubInstall(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _pluginGithubInstalled = true;
+        _setPluginHomeChrome();
+        if (_pluginGithubLoggedIn)
+        {
+            _showPluginWizard(4);
+        }
+        else
+        {
+            _showPluginWizard(0);
+        }
+    }
+
+    void EnhancedInputContent::_onPluginSoonClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        if (auto st = PluginHomeStatus())
+        {
+            st.Text(L"第一期只开放 GitHub。这个卡片是给以后留的位置。");
+        }
+    }
+
+    void EnhancedInputContent::_onPluginHasAccount(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _showPluginWizard(2);
+    }
+
+    void EnhancedInputContent::_onPluginNoAccount(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _showPluginWizard(1);
+    }
+
+    void EnhancedInputContent::_onPluginOpenSignup(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _launchUri(L"https://github.com/signup");
+    }
+
+    void EnhancedInputContent::_onPluginSignupDone(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _showPluginWizard(2);
+    }
+
+    void EnhancedInputContent::_onPluginOpenLogin(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _launchUri(L"https://github.com/login");
+    }
+
+    void EnhancedInputContent::_onPluginLoginDone(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _pluginGithubLoggedIn = true;
+        _setPluginHomeChrome();
+        _showPluginWizard(3);
+    }
+
+    void EnhancedInputContent::_onPluginNewRepo(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _pluginRepoChoice = L"new";
+        _showPluginWizard(4);
+        if (auto st = PluginWizardStatus())
+        {
+            st.Text(L"已记下：新建私有仓库。下一期才会在 GitHub 上真正创建。");
+        }
+    }
+
+    void EnhancedInputContent::_onPluginExistingRepo(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _pluginRepoChoice = L"existing";
+        _showPluginWizard(4);
+        if (auto st = PluginWizardStatus())
+        {
+            st.Text(L"已记下：连接已有仓库。下一期才会真正连接。");
+        }
+    }
+
+    void EnhancedInputContent::_onPluginSave(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        if (auto st = PluginWizardStatus())
+        {
+            st.Text(L"下一期才会真正「保存一版」（git commit）。这一期没有写入任何仓库。");
+        }
+    }
+
+    void EnhancedInputContent::_onPluginUpload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        if (auto st = PluginWizardStatus())
+        {
+            st.Text(L"下一期才会真正「上传到云端」（git push）。这一期没有上传。");
+        }
+    }
+
+    void EnhancedInputContent::_onPluginDownload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        if (auto st = PluginWizardStatus())
+        {
+            st.Text(L"下一期才会真正「从云端取回」（git pull）。这一期没有下载。");
+        }
+    }
+
+    void EnhancedInputContent::_onPluginWizardBackHome(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        if (auto wiz = PluginWizardRoot())
+        {
+            wiz.Visibility(WUX::Visibility::Collapsed);
+        }
+        if (auto home = PluginMarketHome())
+        {
+            home.Visibility(WUX::Visibility::Visible);
+        }
+        _setPluginHomeChrome();
     }
 
 #pragma endregion

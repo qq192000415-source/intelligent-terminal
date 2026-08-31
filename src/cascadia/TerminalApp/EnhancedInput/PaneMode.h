@@ -13,6 +13,7 @@ namespace winrt::TerminalApp::implementation
     {
         Claude,
         Grok,
+        Plugins,
     };
 
     struct InputPaneRoots
@@ -22,8 +23,25 @@ namespace winrt::TerminalApp::implementation
         std::span<const CommandGroup> groups;
     };
 
+    inline const wchar_t* TypeFor(InputPaneMode mode) noexcept
+    {
+        switch (mode)
+        {
+        case InputPaneMode::Grok:
+            return L"grokInput";
+        case InputPaneMode::Plugins:
+            return L"pluginMarketplace";
+        default:
+            return L"enhancedInput";
+        }
+    }
+
     inline InputPaneRoots RootsFor(InputPaneMode mode, const std::filesystem::path& userProfile)
     {
+        if (mode == InputPaneMode::Plugins)
+        {
+            return { userProfile / L".claude", userProfile / L".claude" / L"skills", {} };
+        }
         const auto dir = userProfile / (mode == InputPaneMode::Grok ? L".grok" : L".claude");
         if (mode == InputPaneMode::Grok)
         {

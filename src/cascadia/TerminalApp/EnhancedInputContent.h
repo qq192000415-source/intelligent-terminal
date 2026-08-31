@@ -105,8 +105,30 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::DispatcherTimer _noteClickTimer{ nullptr };
         bool _composerExpanded{ false };
 
+        bool _pluginGithubInstalled{ false };
+        bool _pluginGithubLoggedIn{ false };
+        std::wstring _pluginRepoChoice;
+
         void _updateTargetPill();
         void _buildCommandCards();
+        void _applyModeChrome();
+        void _showPluginWizard(int step);
+        void _setPluginHomeChrome();
+        void _launchUri(std::wstring_view uri);
+        void _onPluginGithubInstall(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginSoonClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginHasAccount(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginNoAccount(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginOpenSignup(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginSignupDone(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginOpenLogin(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginLoginDone(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginNewRepo(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginExistingRepo(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginSave(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginUpload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginDownload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginWizardBackHome(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
 
         // Tab switching
         void _applyPaletteTab(PaletteTab tab);

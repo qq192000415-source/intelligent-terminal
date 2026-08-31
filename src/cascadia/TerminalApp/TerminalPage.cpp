@@ -3375,6 +3375,12 @@ namespace winrt::TerminalApp::implementation
         _ToggleEnhancedInputPane(InputPaneMode::Grok);
     }
 
+    // Bottom-bar plugin marketplace toggle. Mirrors Alt+P.
+    void TerminalPage::_PluginMarketplaceToggleButtonOnClick(const IInspectable&, const RoutedEventArgs&)
+    {
+        _ToggleEnhancedInputPane(InputPaneMode::Plugins);
+    }
+
     void TerminalPage::_ToggleEnhancedInputPane()
     {
         _ToggleEnhancedInputPane(InputPaneMode::Claude);
@@ -3421,7 +3427,7 @@ namespace winrt::TerminalApp::implementation
         }
         else
         {
-            const auto type = requested == InputPaneMode::Grok ? L"grokInput" : L"enhancedInput";
+            const auto type = TypeFor(requested);
             if (const auto newPane = _MakePane(BaseContentArgs{ type }, nullptr))
             {
                 _UnZoomIfNeeded();
@@ -3702,10 +3708,10 @@ namespace winrt::TerminalApp::implementation
             sessionsBtn.Background(sessionsLit ? kLitOverlay : kTransparent);
         }
 
-        // Enhanced-input toggles: mutually exclusive. Closed → both dark;
-        // Claude → left button lit; Grok → Grok button lit.
+        // Enhanced-input toggles: mutually exclusive. Closed → all dark;
+        // Claude / Grok / Plugins each light only their own button.
         bool eiOpen = false;
-        bool grokMode = false;
+        auto eiMode = InputPaneMode::Claude;
         if (focusedTabImpl)
         {
             if (const auto rootPane = focusedTabImpl->GetRootPane())
@@ -3714,7 +3720,7 @@ namespace winrt::TerminalApp::implementation
                     if (auto ei = p->GetContent().try_as<winrt::TerminalApp::EnhancedInputContent>())
                     {
                         eiOpen = true;
-                        grokMode = get_self<EnhancedInputContent>(ei)->Mode() == InputPaneMode::Grok;
+                        eiMode = get_self<EnhancedInputContent>(ei)->Mode();
                         return true;
                     }
                     return false;
@@ -3723,11 +3729,15 @@ namespace winrt::TerminalApp::implementation
         }
         if (auto eiBtn = EnhancedInputToggleButton())
         {
-            eiBtn.Background((eiOpen && !grokMode) ? kLitOverlay : kTransparent);
+            eiBtn.Background((eiOpen && eiMode == InputPaneMode::Claude) ? kLitOverlay : kTransparent);
         }
         if (auto grokBtn = GrokInputToggleButton())
         {
-            grokBtn.Background((eiOpen && grokMode) ? kLitOverlay : kTransparent);
+            grokBtn.Background((eiOpen && eiMode == InputPaneMode::Grok) ? kLitOverlay : kTransparent);
+        }
+        if (auto plugBtn = PluginMarketplaceToggleButton())
+        {
+            plugBtn.Background((eiOpen && eiMode == InputPaneMode::Plugins) ? kLitOverlay : kTransparent);
         }
 
         // Swap the toggle icon to match the current pane position.
@@ -9951,12 +9961,16 @@ namespace winrt::TerminalApp::implementation
 
             content = *tasksContent;
         }
-        else if (paneType == L"enhancedInput" || paneType == L"grokInput")
+        else if (paneType == L"enhancedInput" || paneType == L"grokInput" || paneType == L"pluginMarketplace")
         {
             const auto& enhancedContent{ winrt::make_self<EnhancedInputContent>() };
             if (paneType == L"grokInput")
             {
                 enhancedContent->SetMode(InputPaneMode::Grok);
+            }
+            else if (paneType == L"pluginMarketplace")
+            {
+                enhancedContent->SetMode(InputPaneMode::Plugins);
             }
             enhancedContent->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
             enhancedContent->DispatchActionRequested([weak = get_weak()](const auto& sender, const auto& actionAndArgs) {

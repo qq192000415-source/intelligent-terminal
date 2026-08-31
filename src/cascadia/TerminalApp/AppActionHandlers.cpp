@@ -304,6 +304,12 @@ namespace winrt::TerminalApp::implementation
                     args.Handled(true);
                     return;
                 }
+                if (t == L"pluginMarketplace")
+                {
+                    _ToggleEnhancedInputPane(InputPaneMode::Plugins);
+                    args.Handled(true);
+                    return;
+                }
             }
 
             const auto& duplicateFromTab{ realArgs.SplitMode() == SplitType::Duplicate ? _GetFocusedTab() : nullptr };

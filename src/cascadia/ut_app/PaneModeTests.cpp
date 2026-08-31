@@ -15,6 +15,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(GrokRootsUseDotGrok);
         TEST_METHOD(GrokGroupsAreGrokTable);
         TEST_METHOD(ClaudeGroupsAreClaudeTable);
+        TEST_METHOD(PluginsTypeAndEmptyGroups);
     };
 
     void PaneModeTests::ClaudeRootsUseDotClaude()
@@ -43,5 +44,12 @@ namespace TerminalAppUnitTests
         const auto r = RootsFor(InputPaneMode::Claude, L"D:\\fakehome");
         VERIFY_ARE_EQUAL(std::size(kCommandGroups), r.groups.size());
         VERIFY_ARE_EQUAL(std::wstring{ L"对话管理" }, std::wstring{ r.groups[0].title });
+    }
+
+    void PaneModeTests::PluginsTypeAndEmptyGroups()
+    {
+        VERIFY_ARE_EQUAL(std::wstring{ L"pluginMarketplace" }, std::wstring{ TypeFor(InputPaneMode::Plugins) });
+        const auto r = RootsFor(InputPaneMode::Plugins, L"D:\\fakehome");
+        VERIFY_IS_TRUE(r.groups.empty());
     }
 }
