@@ -201,6 +201,7 @@
     <ClInclude Include="EnhancedInput\ComposerLogic.h" />
     <ClInclude Include="EnhancedInput\SkillScanner.h" />
     <ClInclude Include="EnhancedInput\LocalStore.h" />
+    <ClInclude Include="EnhancedInput\GitArchive.h" />
     <ClInclude Include="EnhancedInput\NoteStore.h" />
     <ClInclude Include="SettingsPaneContent.h">
       <DependentUpon>TerminalPaneContent.idl</DependentUpon>
@@ -339,6 +340,7 @@
     <ClCompile Include="EnhancedInput\AttachmentStore.cpp" />
     <ClCompile Include="EnhancedInput\SkillScanner.cpp" />
     <ClCompile Include="EnhancedInput\LocalStore.cpp" />
+    <ClCompile Include="EnhancedInput\GitArchive.cpp" />
     <ClCompile Include="EnhancedInput\NoteStore.cpp" />
     <ClCompile Include="SettingsPaneContent.cpp">
       <DependentUpon>TerminalPaneContent.idl</DependentUpon>

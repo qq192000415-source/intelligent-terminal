@@ -11,9 +11,13 @@
 >
 > 这是微软 [Intelligent Terminal](https://github.com/microsoft/intelligent-terminal) 的**非官方社区 fork**（MIT），**与微软无关**。
 >
-> Extra feature: a right-side **Claude / Grok enhanced input pane** (`Alt+E` / `Alt+G`, same column, not both at once). This is **not** the built-in Agent pane (`Ctrl+Shift+.` / `Ctrl+Shift+/`).
+> Extra feature: a right-side **Claude / Grok enhanced input pane** (`Alt+E` / `Alt+G`, same column, not both at once) and a **plugin** pane (`Alt+P`). This is **not** the built-in Agent pane (`Ctrl+Shift+.` / `Ctrl+Shift+/`).
 >
-> 本 fork 额外功能：右侧 **Claude / Grok 增强输入面板**（`Alt+E` / `Alt+G`，同一列、不能并排）。和官方 Agent 面板不是一套。
+> 本 fork 额外功能：右侧 **Claude / Grok 增强输入面板**（`Alt+E` / `Alt+G`）和 **插件**（`Alt+P`）。和官方 Agent 面板不是一套。
+>
+> **Install this fork from [Releases](https://github.com/qq192000415-source/intelligent-terminal/releases/latest)** (signed `.msix` + `.cer`). Do **not** use the Microsoft Store / WinGet / official Downloads links below — those install Microsoft's build **without** Alt+E / Alt+G / the plugin pane.
+>
+> **安装请下 [Releases](https://github.com/qq192000415-source/intelligent-terminal/releases/latest)**。先装 `.cer`，再双击 `.msix`。不要点下面的微软商店/WinGet/官方下载（那是官方版，没有这些面板）。源代码请克隆本仓库或下载对应 tag 的 zip。
 >
 > License remains MIT. Keep the Microsoft copyright notice. Microsoft, Claude, and Grok names and marks belong to their owners.
 
@@ -58,9 +62,10 @@ This repository is a **community fork**. Day-to-day work happens here; Microsoft
 | Layout | Right column | Same column (cannot sit side-by-side with Claude) | Independent |
 | Close | Same shortcut again | Same shortcut again | Same shortcut again |
 
-- Claude: 6 groups / 29 commands. Grok: 7 groups / 61 commands. Shared notes tab in the pane.
+- Claude: 6 groups / 29 commands. Grok: 7 groups / 61 commands. Plugin pane: GitHub 云端存档. Shared notes tab.
+- **Customers:** installer = [Releases](https://github.com/qq192000415-source/intelligent-terminal/releases/latest); source = this git repo / tag.
 - Code: `src/cascadia/TerminalApp/EnhancedInput/` plus `EnhancedInputContent.*`.
-- Build: same as upstream — see [Building the Code](#building-the-code) and [quick-start-local-dev](doc/quick-start-local-dev.md).
+- Build from source: [Building the Code](#building-the-code) and [quick-start-local-dev](doc/quick-start-local-dev.md).
 
 **Remotes (after cloning this fork):**
 

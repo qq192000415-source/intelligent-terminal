@@ -13,6 +13,7 @@
 #include "EnhancedInput/LocalStore.h"
 #include "EnhancedInput/NoteStore.h"
 #include "EnhancedInput/PaneMode.h"
+#include "EnhancedInput/GitArchive.h"
 
 namespace winrt::TerminalApp::implementation
 {
@@ -127,8 +128,13 @@ namespace winrt::TerminalApp::implementation
         void _onPluginExistingRepo(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginSave(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginUpload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginPushOnly(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginDownload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginWizardBackHome(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        GitArchive _pluginGit() const;
+        std::filesystem::path _pluginWorkDir() const;
+        void _refreshPluginGitUi();
+        void _showPluginGitResult(const GitRun& r);
 
         // Tab switching
         void _applyPaletteTab(PaletteTab tab);

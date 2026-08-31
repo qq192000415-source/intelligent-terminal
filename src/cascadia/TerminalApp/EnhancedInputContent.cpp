@@ -9,6 +9,7 @@
 #include <winrt/Windows.Graphics.Imaging.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <cwctype>
@@ -2025,6 +2026,10 @@ namespace winrt::TerminalApp::implementation
         {
             el.Visibility(vis4);
         }
+        if (step == 4)
+        {
+            _refreshPluginGitUi();
+        }
         if (auto title = PluginWizardTitle())
         {
             switch (step)
@@ -2039,7 +2044,7 @@ namespace winrt::TerminalApp::implementation
                 title.Text(L"存到哪里？");
                 break;
             case 4:
-                title.Text(L"可以开始存档了");
+                title.Text(L"云端存档");
                 break;
             default:
                 title.Text(L"这台电脑还没连上 GitHub");
@@ -2060,7 +2065,7 @@ namespace winrt::TerminalApp::implementation
                 lead.Text(L"第一期只记下你的选择，下一期才会真正建仓库。");
                 break;
             case 4:
-                lead.Text(L"三个键下一期才会真正连上 GitHub。现在按下会说明，不会假装成功。");
+                lead.Text(L"空说明会自动写成今天的存档名。上传需要已经登录 GitHub。");
                 break;
             default:
                 lead.Text(L"按从来没登过设计。不需要记命令。");
@@ -2159,28 +2164,177 @@ namespace winrt::TerminalApp::implementation
         }
     }
 
-    void EnhancedInputContent::_onPluginSave(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    std::filesystem::path EnhancedInputContent::_pluginWorkDir() const
+    {
+        const auto control = _control.get();
+        if (!control)
+        {
+            return {};
+        }
+        std::wstring wd{ control.WorkingDirectory() };
+        if (wd.empty())
+        {
+            return {};
+        }
+        if (wd.rfind(L"file:", 0) == 0)
+        {
+            auto p = wd.find(L":/");
+            if (p != std::wstring::npos)
+            {
+                wd = wd.substr(p + 2);
+                if (!wd.empty() && wd.front() == L'/')
+                {
+                    wd.erase(0, 1);
+                }
+            }
+            std::replace(wd.begin(), wd.end(), L'/', L'\\');
+        }
+        std::error_code ec;
+        if (std::filesystem::is_directory(wd, ec))
+        {
+            return wd;
+        }
+        return {};
+    }
+
+    GitArchive EnhancedInputContent::_pluginGit() const
+    {
+        GitArchive g;
+        g.gitExe = GitArchive::FindGit();
+        g.cwd = _pluginWorkDir();
+        return g;
+    }
+
+    void EnhancedInputContent::_refreshPluginGitUi()
+    {
+        const auto g = _pluginGit();
+        const auto dir = g.cwd;
+        if (auto acc = PluginMetaAccount())
+        {
+            acc.Text(_pluginGithubLoggedIn ? L"账号：已登录（用本机 GitHub 凭据上传）" : L"账号：还没登录。请先走登录向导。");
+        }
+        if (auto folder = PluginMetaFolder())
+        {
+            folder.Text(dir.empty() ? L"这个文件夹：还不知道。先在左边终端进到你的项目文件夹。" :
+                                      (L"这个文件夹：" + dir.wstring()));
+        }
+        if (auto repo = PluginMetaRepo())
+        {
+            if (!g.Installed())
+            {
+                repo.Text(L"网上仓库：还没装 Git。");
+            }
+            else if (dir.empty())
+            {
+                repo.Text(L"网上仓库：—");
+            }
+            else if (!g.IsRepo() || !g.HasRemote())
+            {
+                repo.Text(L"网上仓库：还没有。第一次「存档并上传」会需要一个 GitHub 仓库。");
+            }
+            else
+            {
+                const auto url = g.Run({ L"remote", L"get-url", g.RemoteName() });
+                repo.Text(L"网上仓库：" + (url.ok() ? url.out : g.RemoteName()));
+            }
+        }
+        if (auto tb = PluginCommitMessage())
+        {
+            tb.PlaceholderText(GitArchive::AutoMessage(dir.empty() ? std::filesystem::path{ L"项目" } : dir));
+        }
+        const bool canWork = g.Installed() && !dir.empty();
+        const bool logged = _pluginGithubLoggedIn;
+        if (auto b = PluginBtnLocal())
+        {
+            b.IsEnabled(canWork);
+        }
+        if (auto b = PluginBtnCommitPush())
+        {
+            b.IsEnabled(canWork && logged);
+        }
+        if (auto b = PluginBtnPush())
+        {
+            b.IsEnabled(canWork && logged && g.IsRepo() && g.HasRemote() && g.HasUnpushed());
+        }
+        if (auto b = PluginBtnPull())
+        {
+            b.IsEnabled(canWork && logged && g.IsRepo() && g.HasRemote());
+        }
+    }
+
+    void EnhancedInputContent::_showPluginGitResult(const GitRun& r)
     {
         if (auto st = PluginWizardStatus())
         {
-            st.Text(L"下一期才会真正「保存一版」（git commit）。这一期没有写入任何仓库。");
+            st.Text(r.message.empty() ? (r.ok() ? L"好了。" : L"没做成。") : r.message);
         }
+        _refreshPluginGitUi();
+    }
+
+    void EnhancedInputContent::_onPluginSave(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        auto g = _pluginGit();
+        bool addAll = true;
+        if (auto cb = PluginIncludeUnstaged())
+        {
+            if (const auto v = cb.IsChecked())
+            {
+                addAll = v.Value();
+            }
+        }
+        std::wstring msg;
+        if (auto tb = PluginCommitMessage())
+        {
+            msg = std::wstring{ tb.Text() };
+        }
+        _showPluginGitResult(g.Commit(msg, addAll));
     }
 
     void EnhancedInputContent::_onPluginUpload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
     {
-        if (auto st = PluginWizardStatus())
+        auto g = _pluginGit();
+        bool addAll = true;
+        if (auto cb = PluginIncludeUnstaged())
         {
-            st.Text(L"下一期才会真正「上传到云端」（git push）。这一期没有上传。");
+            if (const auto v = cb.IsChecked())
+            {
+                addAll = v.Value();
+            }
         }
+        std::wstring msg;
+        if (auto tb = PluginCommitMessage())
+        {
+            msg = std::wstring{ tb.Text() };
+        }
+        auto c = g.Commit(msg, addAll);
+        if (!c.ok() && c.message.find(L"没有要保存") == std::wstring::npos)
+        {
+            _showPluginGitResult(c);
+            return;
+        }
+        if (!g.HasRemote())
+        {
+            GitRun r;
+            r.message = L"还没有网上仓库。请先在 GitHub 新建一个私有仓库，或用终端把仓库连上，再点「只上传」。本地这一版已经保存的话可以先点「只存到这台电脑」。";
+            if (c.ok())
+            {
+                r.message = L"已保存到这台电脑。还没有网上仓库，所以没上传。";
+                r.exitCode = 0;
+            }
+            _showPluginGitResult(r);
+            return;
+        }
+        _showPluginGitResult(g.Push());
+    }
+
+    void EnhancedInputContent::_onPluginPushOnly(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _showPluginGitResult(_pluginGit().Push());
     }
 
     void EnhancedInputContent::_onPluginDownload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
     {
-        if (auto st = PluginWizardStatus())
-        {
-            st.Text(L"下一期才会真正「从云端取回」（git pull）。这一期没有下载。");
-        }
+        _showPluginGitResult(_pluginGit().Pull());
     }
 
     void EnhancedInputContent::_onPluginWizardBackHome(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)

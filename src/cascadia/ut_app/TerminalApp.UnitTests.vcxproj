@@ -27,6 +27,7 @@
     <ClCompile Include="GrokCommandDataTests.cpp" />
     <ClCompile Include="PaneModeTests.cpp" />
     <ClCompile Include="LocalStoreTests.cpp" />
+    <ClCompile Include="GitArchiveTests.cpp" />
     <ClCompile Include="NoteStoreTests.cpp" />
     <ClCompile Include="SkillScannerTests.cpp" />
     <ClCompile Include="AttachmentStoreTests.cpp" />

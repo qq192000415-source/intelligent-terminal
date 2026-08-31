@@ -32,6 +32,9 @@
     <ClCompile Include="EnhancedInput\LocalStore.cpp">
       <Filter>pane</Filter>
     </ClCompile>
+    <ClCompile Include="EnhancedInput\GitArchive.cpp">
+      <Filter>pane</Filter>
+    </ClCompile>
     <ClCompile Include="EnhancedInput\NoteStore.cpp">
       <Filter>pane</Filter>
     </ClCompile>
