@@ -449,16 +449,41 @@
                                            Text="GitHub 云端存档" />
                                 <TextBlock FontSize="11"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           Text="把文件保存到网上。换电脑登录同一个号就能取回。"
+                                           Text="点「打开」进入提交/上传。▾ 可重新连接或断开（换账号）。"
                                            TextWrapping="Wrap" />
                             </StackPanel>
-                            <Button x:Name="PluginGithubInstallButton"
-                                    Grid.Column="1"
-                                    VerticalAlignment="Center"
-                                    Click="_onPluginGithubInstall"
-                                    Content="安装"
-                                    FontSize="12"
-                                    Style="{ThemeResource AccentButtonStyle}" />
+                            <StackPanel Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Orientation="Horizontal"
+                                        Spacing="6">
+                                <Button x:Name="PluginGithubInstallButton"
+                                        Click="_onPluginGithubInstall"
+                                        Content="连接"
+                                        FontSize="12"
+                                        Style="{ThemeResource AccentButtonStyle}" />
+                                <Button x:Name="PluginGithubConnectedButton"
+                                        Click="_onPluginGithubOpen"
+                                        FontSize="12"
+                                        Style="{ThemeResource AccentButtonStyle}"
+                                        Visibility="Collapsed">
+                                    <TextBlock x:Name="PluginGithubConnectedLabel"
+                                               Text="打开" />
+                                </Button>
+                                <Button x:Name="PluginGithubConnectedMenu"
+                                        FontSize="12"
+                                        Padding="8,4"
+                                        Visibility="Collapsed">
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Click="_onPluginGithubReconnect"
+                                                            Text="重新连接" />
+                                            <MenuFlyoutItem Click="_onPluginGithubDisconnect"
+                                                            Text="断开连接" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                    <TextBlock Text="▾" />
+                                </Button>
+                            </StackPanel>
                         </Grid>
                         <Grid Padding="10"
                               Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -513,6 +538,8 @@
             <Grid x:Name="PluginWizardRoot"
                   Background="{ThemeResource UnfocusedBorderBrush}"
                   Visibility="Collapsed">
+                <ScrollViewer HorizontalScrollMode="Disabled"
+                              VerticalScrollBarVisibility="Auto">
                 <StackPanel VerticalAlignment="Top"
                             Spacing="12">
                     <TextBlock x:Name="PluginWizardTitle"
@@ -606,9 +633,17 @@
                     <StackPanel x:Name="PluginWizardStep4"
                                 Spacing="8"
                                 Visibility="Collapsed">
-                        <TextBlock x:Name="PluginMetaAccount"
-                                   FontSize="12"
-                                   Text="账号：还没登录" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock x:Name="PluginMetaAccount"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Text="账号：还没登录" />
+                            <Button x:Name="PluginBtnDisconnect"
+                                    Click="_onPluginGithubDisconnect"
+                                    Content="断开"
+                                    FontSize="11"
+                                    Padding="8,2" />
+                        </StackPanel>
                         <TextBlock x:Name="PluginMetaFolder"
                                    FontSize="12"
                                    TextWrapping="Wrap"
@@ -617,34 +652,70 @@
                                    FontSize="12"
                                    TextWrapping="Wrap"
                                    Text="网上仓库：还没有" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Text="提交到" />
+                            <ComboBox x:Name="PluginBranchCombo"
+                                      MinWidth="160"
+                                      AutomationProperties.Name="提交到"
+                                      SelectionChanged="_onPluginBranchChanged" />
+                            <Button x:Name="PluginBtnNewBranch"
+                                    Click="_onPluginNewBranchClick"
+                                    Content="+ 新分支"
+                                    FontSize="12"
+                                    Padding="8,4" />
+                        </StackPanel>
                         <TextBox x:Name="PluginCommitMessage"
                                  FontSize="12"
                                  Header="这一版叫什么（可空）"
                                  PlaceholderText="空着会自动写成今天的存档名" />
-                        <CheckBox x:Name="PluginIncludeUnstaged"
-                                  Content="把还没保存的文件也算进去"
-                                  IsChecked="True" />
-                        <Button x:Name="PluginBtnCommitPush"
-                                Click="_onPluginUpload"
-                                Content="存档并上传到网上"
-                                HorizontalAlignment="Stretch"
-                                Style="{ThemeResource AccentButtonStyle}" />
-                        <Button x:Name="PluginBtnLocal"
-                                Click="_onPluginSave"
-                                Content="只存到这台电脑"
-                                HorizontalAlignment="Stretch" />
-                        <Button x:Name="PluginBtnPush"
-                                Click="_onPluginPushOnly"
-                                Content="只上传"
-                                HorizontalAlignment="Stretch" />
-                        <Button x:Name="PluginBtnPull"
-                                Click="_onPluginDownload"
-                                Content="从网上取回"
-                                HorizontalAlignment="Stretch" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <CheckBox x:Name="PluginIncludeUnstaged"
+                                      Content="把还没保存的文件也算进去"
+                                      Checked="_onPluginUnstagedChanged"
+                                      Unchecked="_onPluginUnstagedChanged"
+                                      IsChecked="True" />
+                            <TextBlock x:Name="PluginDiffAdded"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Foreground="#3DDC84"
+                                       Text="+0" />
+                            <TextBlock x:Name="PluginDiffDeleted"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Foreground="#FF6B6B"
+                                       Text="-0" />
+                        </StackPanel>
                         <TextBlock x:Name="PluginWizardStatus"
                                    FontSize="12"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    TextWrapping="Wrap" />
+                        <Button x:Name="PluginBtnCommitPush"
+                                Click="_onPluginUpload"
+                                Content="本地提交并推送GitHub"
+                                HorizontalAlignment="Stretch"
+                                PointerEntered="_onPluginHelpEnter"
+                                PointerExited="_onPluginHelpLeave"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                        <Button x:Name="PluginBtnLocal"
+                                Click="_onPluginSave"
+                                Content="本地提交"
+                                HorizontalAlignment="Stretch"
+                                PointerEntered="_onPluginHelpEnter"
+                                PointerExited="_onPluginHelpLeave" />
+                        <Button x:Name="PluginBtnPush"
+                                Click="_onPluginPushOnly"
+                                Content="推送GitHub"
+                                HorizontalAlignment="Stretch"
+                                PointerEntered="_onPluginHelpEnter"
+                                PointerExited="_onPluginHelpLeave" />
+                        <Button x:Name="PluginBtnPull"
+                                Click="_onPluginDownload"
+                                Content="从 GitHub上取回"
+                                HorizontalAlignment="Stretch"
+                                PointerEntered="_onPluginHelpEnter"
+                                PointerExited="_onPluginHelpLeave" />
                         <Button Click="_onPluginWizardBackHome"
                                 Content="回到插件页" />
                     </StackPanel>
@@ -652,6 +723,82 @@
                             Click="_onPluginWizardBackHome"
                             Content="关闭向导" />
                 </StackPanel>
+                </ScrollViewer>
+            </Grid>
+            <!-- 盖住整个插件列：不透明卡片 + 整页压暗，后面的字/按钮不能透出来。 -->
+            <Grid x:Name="PluginNewBranchDialog"
+                  Canvas.ZIndex="20"
+                  Margin="-14,-8,-14,-12"
+                  Visibility="Collapsed">
+                <Rectangle Fill="Black"
+                           IsHitTestVisible="True"
+                           Opacity="0.75" />
+                <Border MaxWidth="340"
+                        Padding="16"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <StackPanel Spacing="10">
+                        <TextBlock FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Text="新分支" />
+                        <TextBlock FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="马上创建并切换过去。之后的提交和推送都打到这个分支。" />
+                        <TextBox x:Name="PluginNewBranchName"
+                                 Header="分支名"
+                                 PlaceholderText="例如 feature-login" />
+                        <Button Click="_onPluginNewBranchCreate"
+                                Content="创建并切换"
+                                HorizontalAlignment="Stretch"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                        <Button Click="_onPluginNewBranchCancel"
+                                Content="取消"
+                                HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+            <Grid x:Name="PluginVisibilityDialog"
+                  Canvas.ZIndex="20"
+                  Margin="-14,-8,-14,-12"
+                  Visibility="Collapsed">
+                <Rectangle Fill="Black"
+                           IsHitTestVisible="True"
+                           Opacity="0.75" />
+                <Border MaxWidth="340"
+                        Padding="16"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <StackPanel Spacing="10">
+                        <TextBlock FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Text="新建 GitHub 仓库" />
+                        <TextBlock FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="这个项目还没有网上仓库。建成后别人能不能看见？默认私有。" />
+                        <RadioButton x:Name="PluginVisPrivate"
+                                     Content="私有（仅自己可见）"
+                                     GroupName="PluginVis"
+                                     IsChecked="True" />
+                        <RadioButton x:Name="PluginVisPublic"
+                                     Content="公开（任何人能看见）"
+                                     GroupName="PluginVis" />
+                        <Button Click="_onPluginCreateRepo"
+                                Content="创建并推送"
+                                HorizontalAlignment="Stretch"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                        <Button Click="_onPluginCreateRepoCancel"
+                                Content="取消"
+                                HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Border>
             </Grid>
         </Grid>
     </Grid>

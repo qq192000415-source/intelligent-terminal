@@ -108,7 +108,13 @@ namespace winrt::TerminalApp::implementation
 
         bool _pluginGithubInstalled{ false };
         bool _pluginGithubLoggedIn{ false };
+        bool _pluginGithubDismissed{ false };
+        bool _pluginGithubProbed{ false };
+        std::wstring _pluginGithubUser;
         std::wstring _pluginRepoChoice;
+        std::wstring _pluginLastStatus;
+        bool _pluginPendingCommitThenPush{ false };
+        bool _pluginFillingBranches{ false };
 
         void _updateTargetPill();
         void _buildCommandCards();
@@ -116,7 +122,11 @@ namespace winrt::TerminalApp::implementation
         void _showPluginWizard(int step);
         void _setPluginHomeChrome();
         void _launchUri(std::wstring_view uri);
+        void _probePluginGithub();
         void _onPluginGithubInstall(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginGithubOpen(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginGithubReconnect(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginGithubDisconnect(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginSoonClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginHasAccount(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginNoAccount(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
@@ -131,10 +141,22 @@ namespace winrt::TerminalApp::implementation
         void _onPluginPushOnly(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginDownload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginWizardBackHome(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginHelpEnter(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs&);
+        void _onPluginHelpLeave(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs&);
         GitArchive _pluginGit() const;
         std::filesystem::path _pluginWorkDir() const;
         void _refreshPluginGitUi();
         void _showPluginGitResult(const GitRun& r);
+        void _showPluginVisibilityDialog(bool commitThenPush);
+        void _onPluginCreateRepo(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginCreateRepoCancel(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginBranchChanged(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::Controls::SelectionChangedEventArgs&);
+        void _onPluginNewBranchClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginNewBranchCreate(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginNewBranchCancel(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginUnstagedChanged(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _fillPluginBranches();
+        void _refreshPluginDiffCounts();
 
         // Tab switching
         void _applyPaletteTab(PaletteTab tab);

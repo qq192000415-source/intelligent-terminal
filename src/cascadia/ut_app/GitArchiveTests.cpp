@@ -19,6 +19,9 @@ namespace TerminalAppUnitTests
         TEST_METHOD(CommitInTempDirWhenGitPresent);
         TEST_METHOD(MissingGitReportsChinese);
         TEST_METHOD(EmptyCwdAsksToEnterFolder);
+        TEST_METHOD(ProbeGithubUserDoesNotThrow);
+        TEST_METHOD(SanitizeRepoNameReplacesSpaces);
+        TEST_METHOD(CreateBranchAndDiffCounts);
 
         TEST_METHOD_SETUP(Setup);
         TEST_METHOD_CLEANUP(Cleanup);
@@ -94,5 +97,46 @@ namespace TerminalAppUnitTests
         VERIFY_IS_TRUE(log.ok());
         VERIFY_IS_TRUE(log.out.find(L"存档") != std::wstring::npos);
         VERIFY_IS_TRUE(log.out.find(_dir.filename().wstring()) != std::wstring::npos);
+    }
+
+    void GitArchiveTests::ProbeGithubUserDoesNotThrow()
+    {
+        const auto user = GitArchive::ProbeGithubUser();
+        Log::Comment((L"probe user=[" + user + L"]").c_str());
+    }
+
+    void GitArchiveTests::SanitizeRepoNameReplacesSpaces()
+    {
+        VERIFY_ARE_EQUAL(std::wstring{ L"my-notes" }, GitArchive::SanitizeRepoName(L"my notes"));
+        VERIFY_ARE_EQUAL(std::wstring{ L"archive" }, GitArchive::SanitizeRepoName(L"..."));
+        VERIFY_ARE_EQUAL(std::wstring{ L"it-codex-accept" }, GitArchive::SanitizeRepoName(L"it-codex-accept"));
+    }
+
+    void GitArchiveTests::CreateBranchAndDiffCounts()
+    {
+        GitArchive g;
+        g.gitExe = GitArchive::FindGit();
+        if (g.gitExe.empty())
+        {
+            Log::Comment(L"git.exe not on PATH; skip");
+            return;
+        }
+        g.cwd = _dir;
+        {
+            std::ofstream f((_dir / L"a.txt").string());
+            f << "one\ntwo\nthree\n";
+        }
+        VERIFY_IS_TRUE(g.Commit(L"init", true).ok());
+        {
+            std::ofstream f((_dir / L"a.txt").string());
+            f << "one\ntwo\nthree\nfour\n";
+        }
+        int added = 0, deleted = 0;
+        g.DiffCounts(true, added, deleted);
+        VERIFY_IS_TRUE(added >= 1);
+        auto r = g.CreateAndCheckoutBranch(L"feature test");
+        VERIFY_IS_TRUE(r.ok(), r.message.c_str());
+        VERIFY_ARE_EQUAL(std::wstring{ L"feature-test" }, g.CurrentBranch());
+        VERIFY_ARE_EQUAL(std::wstring{ L"feat/x" }, GitArchive::SanitizeBranchName(L"feat/x"));
     }
 }
