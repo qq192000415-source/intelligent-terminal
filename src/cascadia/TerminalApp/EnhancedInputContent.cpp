@@ -11,9 +11,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <ctime>
 #include <cwctype>
 #include <fstream>
+#include <shlobj.h>
+#include <shobjidl.h>
 
 #include "fzf/fzf.h"
 
@@ -45,7 +48,17 @@ namespace winrt::TerminalApp::implementation
     EnhancedInputContent::EnhancedInputContent()
     {
         InitializeComponent();
-        // AcceptsReturn is set to False in the XAML source, but resources.pri (built
+        SizeChanged([this](auto&&, WUX::SizeChangedEventArgs const& e) {
+            const auto w = static_cast<float>(e.NewSize().Width);
+            if (w >= LocalStore::kMinWidth && std::fabs(w - _lastSavedPanelWidth) >= 8.0f)
+            {
+                if (_localStore.SavePanelWidth(w))
+                {
+                    _lastSavedPanelWidth = w;
+                }
+            }
+        });
+        // AcceptsReturn is set to False in the XAML source, but resources.pri (built)
         // by the full package build) may carry an older XBF that still has True.
         // Override it here so the C++ increment is sufficient — no full rebuild needed.
         Composer().AcceptsReturn(false);
@@ -1968,20 +1981,31 @@ namespace winrt::TerminalApp::implementation
         }
     }
 
-    void EnhancedInputContent::_probePluginGithub()
+    safe_void_coroutine EnhancedInputContent::_probePluginGithub()
     {
         if (_pluginGithubProbed || _pluginGithubDismissed)
         {
-            return;
+            co_return;
         }
         _pluginGithubProbed = true;
-        const auto user = GitArchive::ProbeGithubUser();
+        const auto lifetime = get_strong();
+        co_await winrt::resume_background();
+        std::wstring user;
+        try
+        {
+            user = GitArchive::ProbeGithubUser();
+        }
+        catch (...)
+        {
+        }
+        co_await winrt::resume_foreground(Dispatcher());
         if (!user.empty())
         {
             _pluginGithubUser = user;
             _pluginGithubLoggedIn = true;
             _pluginGithubInstalled = true;
         }
+        _setPluginHomeChrome();
     }
 
     void EnhancedInputContent::_setPluginHomeChrome()
@@ -2049,6 +2073,7 @@ namespace winrt::TerminalApp::implementation
         }
         if (step == 4)
         {
+            _pluginDidFetchTags = false;
             _refreshPluginGitUi();
         }
         if (auto title = PluginWizardTitle())
@@ -2114,14 +2139,18 @@ namespace winrt::TerminalApp::implementation
     void EnhancedInputContent::_onPluginGithubInstall(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
     {
         _pluginGithubDismissed = false;
-        _pluginGithubProbed = false;
-        _probePluginGithub();
-        _setPluginHomeChrome();
-        if (_pluginGithubLoggedIn)
+        const auto user = GitArchive::ProbeGithubUser();
+        if (!user.empty())
         {
+            _pluginGithubUser = user;
+            _pluginGithubLoggedIn = true;
+            _pluginGithubInstalled = true;
+            _pluginGithubProbed = true;
+            _setPluginHomeChrome();
             _showPluginWizard(4);
             return;
         }
+        _pluginGithubProbed = false;
         if (!GitArchive::StartGithubLogin())
         {
             if (auto st = PluginHomeStatus())
@@ -2240,29 +2269,7 @@ namespace winrt::TerminalApp::implementation
             return {};
         }
         std::wstring wd{ control.WorkingDirectory() };
-        if (wd.empty())
-        {
-            return {};
-        }
-        if (wd.rfind(L"file:", 0) == 0)
-        {
-            auto p = wd.find(L":/");
-            if (p != std::wstring::npos)
-            {
-                wd = wd.substr(p + 2);
-                if (!wd.empty() && wd.front() == L'/')
-                {
-                    wd.erase(0, 1);
-                }
-            }
-            std::replace(wd.begin(), wd.end(), L'/', L'\\');
-        }
-        std::error_code ec;
-        if (std::filesystem::is_directory(wd, ec))
-        {
-            return wd;
-        }
-        return {};
+        return GitArchive::NormalizeWorkDir(std::move(wd));
     }
 
     GitArchive EnhancedInputContent::_pluginGit() const
@@ -2324,15 +2331,41 @@ namespace winrt::TerminalApp::implementation
         }
         if (auto b = PluginBtnPush())
         {
-            const bool needCreate = g.IsRepo() && !g.HasRemote();
-            b.IsEnabled(canWork && logged && g.IsRepo() && (needCreate || (g.HasRemote() && g.HasUnpushed())));
+            // 有远程但网上仓库已被删时，本地往往已经不 ahead（曾经推过），
+            // 不能因此把按钮灰掉，否则没法点开「重新建仓」。
+            b.IsEnabled(canWork && logged && g.IsRepo());
         }
         if (auto b = PluginBtnPull())
         {
             b.IsEnabled(canWork && logged && g.IsRepo() && g.HasRemote());
         }
+        if (auto b = PluginBtnTag())
+        {
+            b.IsEnabled(canWork && g.IsRepo());
+        }
+        if (auto b = PluginBtnUploadAsset())
+        {
+            b.IsEnabled(logged && canWork && g.IsRepo() && g.HasRemote());
+        }
         _fillPluginBranches();
+        _fillPluginTags();
+        _fillPluginLog();
         _refreshPluginDiffCounts();
+        if (auto st = PluginWizardStatus())
+        {
+            if (dir.empty())
+            {
+                st.Text(L"还不知道项目文件夹。请在左边用完整路径 cd 进去，例如 D:\\UserData\\Documents\\项目名。");
+            }
+            else if (g.Installed() && !g.IsRepo())
+            {
+                st.Text(L"这个文件夹还没有 git 历史。如果项目在别的盘（比如 D:\\UserData\\Documents\\…），请在左边 cd 到带 .git 的那一层。");
+            }
+            else if (g.IsRepo() && !g.HasHead())
+            {
+                st.Text(L"这里是空的 git（还没有提交），所以分支和备注是空的。请确认左边已经 cd 到真正的项目根目录。");
+            }
+        }
     }
 
     void EnhancedInputContent::_fillPluginBranches()
@@ -2503,7 +2536,14 @@ namespace winrt::TerminalApp::implementation
             _showPluginGitResult(c);
             return;
         }
-        _showPluginGitResult(g.Push());
+        auto p = g.Push();
+        if (!p.ok() && GitArchive::IsRemoteGone(p))
+        {
+            _showPluginGitResult(p);
+            _showPluginVisibilityDialog(false);
+            return;
+        }
+        _showPluginGitResult(p);
     }
 
     void EnhancedInputContent::_onPluginPushOnly(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
@@ -2514,7 +2554,14 @@ namespace winrt::TerminalApp::implementation
             _showPluginVisibilityDialog(false);
             return;
         }
-        _showPluginGitResult(g.Push());
+        auto p = g.Push();
+        if (!p.ok() && GitArchive::IsRemoteGone(p))
+        {
+            _showPluginGitResult(p);
+            _showPluginVisibilityDialog(false);
+            return;
+        }
+        _showPluginGitResult(p);
     }
 
     void EnhancedInputContent::_showPluginVisibilityDialog(bool commitThenPush)
@@ -2527,6 +2574,23 @@ namespace winrt::TerminalApp::implementation
         if (auto pub = PluginVisPublic())
         {
             pub.IsChecked(false);
+        }
+        if (auto nameBox = PluginRepoName())
+        {
+            auto g = _pluginGit();
+            std::wstring suggested;
+            std::wstring owner;
+            std::wstring repo;
+            if (GitArchive::ParseGithubUrl(g.RemoteUrl(), owner, repo))
+            {
+                suggested = GitArchive::SanitizeRepoName(repo);
+            }
+            if (suggested.empty() || suggested == L"archive")
+            {
+                const auto leaf = g.cwd.empty() ? std::wstring{ L"archive" } : g.cwd.filename().wstring();
+                suggested = GitArchive::SanitizeRepoName(leaf);
+            }
+            nameBox.Text(suggested);
         }
         if (auto dlg = PluginVisibilityDialog())
         {
@@ -2553,14 +2617,39 @@ namespace winrt::TerminalApp::implementation
                 isPrivate = !v.Value();
             }
         }
+
+        auto g = _pluginGit();
+        std::wstring typed;
+        if (auto nameBox = PluginRepoName())
+        {
+            typed = std::wstring{ nameBox.Text() };
+        }
+        while (!typed.empty() && iswspace(typed.front()))
+        {
+            typed.erase(typed.begin());
+        }
+        while (!typed.empty() && iswspace(typed.back()))
+        {
+            typed.pop_back();
+        }
+        const bool typedArchive = _wcsicmp(typed.c_str(), L"archive") == 0;
+        if (typed.empty())
+        {
+            const auto leaf = g.cwd.empty() ? std::wstring{ L"archive" } : g.cwd.filename().wstring();
+            typed = leaf;
+        }
+        const auto name = GitArchive::SanitizeRepoName(typed);
+        if (name == L"archive" && !typedArchive)
+        {
+            GitRun bad;
+            bad.message = L"仓库名只能用英文、数字和横线，至少两个英文字母。GitHub 不能用中文名，请自己改。";
+            _showPluginGitResult(bad);
+            return;
+        }
         if (auto dlg = PluginVisibilityDialog())
         {
             dlg.Visibility(WUX::Visibility::Collapsed);
         }
-
-        auto g = _pluginGit();
-        const auto leaf = g.cwd.empty() ? std::wstring{ L"archive" } : g.cwd.filename().wstring();
-        const auto name = GitArchive::SanitizeRepoName(leaf);
         auto created = g.CreateGithubRepo(name, isPrivate);
         if (!created.ok() || created.out.empty())
         {
@@ -2607,7 +2696,447 @@ namespace winrt::TerminalApp::implementation
 
     void EnhancedInputContent::_onPluginDownload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
     {
-        _showPluginGitResult(_pluginGit().Pull());
+        auto r = _pluginGit().Pull();
+        if (_pluginRolledBack && r.ok())
+        {
+            r.message = L"已从 GitHub 取回。本机已回到网上的新版，刚才的回滚被撤掉了。";
+            _pluginRolledBack = false;
+        }
+        _showPluginGitResult(r);
+    }
+
+    void EnhancedInputContent::_fillPluginTags()
+    {
+        auto combo = PluginTagCombo();
+        if (!combo)
+        {
+            return;
+        }
+        auto g = _pluginGit();
+        combo.Items().Clear();
+        const auto tags = g.LocalTags();
+        for (const auto& t : tags)
+        {
+            combo.Items().Append(winrt::box_value(winrt::hstring{ t }));
+        }
+        if (!tags.empty())
+        {
+            combo.SelectedIndex(0);
+        }
+        if (auto b = PluginBtnReset())
+        {
+            b.IsEnabled(!tags.empty());
+        }
+        if (auto b = PluginBtnDeleteTag())
+        {
+            b.IsEnabled(!tags.empty());
+        }
+        if (auto b = PluginBtnUploadAsset())
+        {
+            b.IsEnabled(_pluginGithubLoggedIn && g.HasRemote() && !tags.empty());
+        }
+    }
+
+    void EnhancedInputContent::_fillPluginLog()
+    {
+        auto combo = PluginLogCombo();
+        if (!combo)
+        {
+            return;
+        }
+        combo.Items().Clear();
+        const auto lines = _pluginGit().LogOneline(50);
+        for (const auto& line : lines)
+        {
+            combo.Items().Append(winrt::box_value(winrt::hstring{ line.display }));
+        }
+        if (!lines.empty())
+        {
+            combo.SelectedIndex(0);
+        }
+        if (auto b = PluginBtnResetCommit())
+        {
+            b.IsEnabled(!lines.empty());
+        }
+    }
+
+    void EnhancedInputContent::_onPluginTagClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        std::wstring raw;
+        if (auto tb = PluginTagName())
+        {
+            raw = std::wstring{ tb.Text() };
+        }
+        auto g = _pluginGit();
+        auto r = g.Tag(raw);
+        if (!r.ok())
+        {
+            _showPluginGitResult(r);
+            return;
+        }
+        const auto name = GitArchive::SanitizeTagName(raw);
+        if (_pluginGithubLoggedIn && g.HasRemote())
+        {
+            auto p = g.PushTag(name);
+            if (p.ok())
+            {
+                r.message = p.message;
+            }
+            else
+            {
+                r.message = L"本机已打上标签 " + name + L"，但没传到 GitHub。" +
+                            (p.message.empty() ? L"" : (L" " + p.message));
+            }
+        }
+        else
+        {
+            r.message = L"已打标签 " + name + L"。只在这台电脑。";
+        }
+        _pluginDidFetchTags = true;
+        _showPluginGitResult(r);
+        _fillPluginTags();
+    }
+
+    void EnhancedInputContent::_onPluginResetClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        auto combo = PluginTagCombo();
+        if (!combo || combo.SelectedItem() == nullptr)
+        {
+            GitRun r;
+            r.message = L"请先选一个版本标签。";
+            _showPluginGitResult(r);
+            return;
+        }
+        _pluginPendingResetHash.clear();
+        _pluginPendingResetTag = std::wstring{ winrt::unbox_value<winrt::hstring>(combo.SelectedItem()) };
+        if (auto body = PluginResetBody())
+        {
+            body.Text(L"会丢掉「" + _pluginPendingResetTag +
+                      L"」之后的提交，以及还没提交的文件。只改这台电脑，GitHub 上还是新的。确定回到这一版？");
+        }
+        if (auto dlg = PluginResetDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Visible);
+        }
+    }
+
+    void EnhancedInputContent::_onPluginResetCancel(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _pluginPendingResetTag.clear();
+        _pluginPendingResetHash.clear();
+        if (auto dlg = PluginResetDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Collapsed);
+        }
+    }
+
+    void EnhancedInputContent::_onPluginResetConfirm(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        if (auto dlg = PluginResetDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Collapsed);
+        }
+        GitRun r;
+        if (!_pluginPendingResetHash.empty())
+        {
+            const auto hash = _pluginPendingResetHash;
+            _pluginPendingResetHash.clear();
+            _pluginPendingResetTag.clear();
+            r = _pluginGit().ResetHardToCommit(hash);
+        }
+        else
+        {
+            const auto name = _pluginPendingResetTag;
+            _pluginPendingResetTag.clear();
+            r = _pluginGit().ResetHardToTag(name);
+        }
+        if (r.ok())
+        {
+            _pluginRolledBack = true;
+        }
+        _showPluginGitResult(r);
+    }
+
+    void EnhancedInputContent::_onPluginResetCommitClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        auto combo = PluginLogCombo();
+        if (!combo || combo.SelectedItem() == nullptr)
+        {
+            GitRun r;
+            r.message = L"请先选一条存档备注。";
+            _showPluginGitResult(r);
+            return;
+        }
+        const auto display = std::wstring{ winrt::unbox_value<winrt::hstring>(combo.SelectedItem()) };
+        const auto sp = display.find(L' ');
+        const auto hash = sp == std::wstring::npos ? display : display.substr(0, sp);
+        _pluginPendingResetTag.clear();
+        _pluginPendingResetHash = hash;
+        if (auto body = PluginResetBody())
+        {
+            body.Text(L"会丢掉「" + display +
+                      L"」之后的提交，以及还没提交的文件。只改这台电脑，GitHub 上还是新的。确定回到这一版？");
+        }
+        if (auto dlg = PluginResetDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Visible);
+        }
+    }
+
+    void EnhancedInputContent::_onPluginDeleteTagClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        auto combo = PluginTagCombo();
+        if (!combo || combo.SelectedItem() == nullptr)
+        {
+            GitRun r;
+            r.message = L"请先选一个版本标签。";
+            _showPluginGitResult(r);
+            return;
+        }
+        _pluginPendingDeleteTag = std::wstring{ winrt::unbox_value<winrt::hstring>(combo.SelectedItem()) };
+        const auto g = _pluginGit();
+        const bool remote = _pluginGithubLoggedIn && g.HasRemote();
+        if (auto body = PluginDeleteTagBody())
+        {
+            if (remote)
+            {
+                body.Text(L"将去掉标签「" + _pluginPendingDeleteTag +
+                          L"」（本机和 GitHub 上的这个名字）。提交和文件都还在。已经传上去的安装包这次不删。");
+            }
+            else
+            {
+                body.Text(L"将从这台电脑去掉标签「" + _pluginPendingDeleteTag +
+                          L"」。提交和文件都还在。");
+            }
+        }
+        if (auto dlg = PluginDeleteTagDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Visible);
+        }
+    }
+
+    void EnhancedInputContent::_onPluginDeleteTagCancel(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _pluginPendingDeleteTag.clear();
+        if (auto dlg = PluginDeleteTagDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Collapsed);
+        }
+    }
+
+    void EnhancedInputContent::_onPluginDeleteTagConfirm(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        if (auto dlg = PluginDeleteTagDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Collapsed);
+        }
+        const auto name = _pluginPendingDeleteTag;
+        _pluginPendingDeleteTag.clear();
+        auto g = _pluginGit();
+        const bool remote = _pluginGithubLoggedIn && g.HasRemote();
+        _showPluginGitResult(g.DeleteTag(name, remote));
+    }
+
+    namespace
+    {
+        winrt::hstring FormatInstallerLabel(const std::filesystem::path& p)
+        {
+            std::error_code ec;
+            const auto bytes = std::filesystem::file_size(p, ec);
+            std::wstring size = L"?";
+            if (!ec)
+            {
+                if (bytes >= 1024ull * 1024ull)
+                {
+                    const auto mb = static_cast<double>(bytes) / (1024.0 * 1024.0);
+                    wchar_t buf[32]{};
+                    swprintf_s(buf, L"%.1f MB", mb);
+                    size = buf;
+                }
+                else
+                {
+                    size = std::to_wstring((bytes + 1023) / 1024) + L" KB";
+                }
+            }
+            return winrt::hstring{ p.filename().wstring() + L"  (" + size + L")" };
+        }
+    }
+
+    void EnhancedInputContent::_onPluginUploadAssetClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        auto combo = PluginTagCombo();
+        if (!combo || combo.SelectedItem() == nullptr)
+        {
+            GitRun r;
+            r.message = L"请先选一个版本标签。没有的话先打版本标签。";
+            _showPluginGitResult(r);
+            return;
+        }
+        const auto tag = std::wstring{ winrt::unbox_value<winrt::hstring>(combo.SelectedItem()) };
+        auto g = _pluginGit();
+        if (!g.HasRemote())
+        {
+            GitRun r;
+            r.message = L"还没有网上仓库。请先把源代码推到 GitHub。";
+            _showPluginGitResult(r);
+            return;
+        }
+        _pluginPendingAssetTag = tag;
+        _pluginFoundAssets = GitArchive::FindInstallers(_pluginWorkDir());
+        if (_pluginFoundAssets.empty())
+        {
+            GitRun hint;
+            hint.exitCode = 0;
+            hint.message = L"项目里没找到现成的安装包，请自己选文件。";
+            _showPluginGitResult(hint);
+            _pickInstallerManually();
+            return;
+        }
+        auto list = PluginAssetCombo();
+        if (list)
+        {
+            list.Items().Clear();
+            for (const auto& p : _pluginFoundAssets)
+            {
+                list.Items().Append(winrt::box_value(FormatInstallerLabel(p)));
+            }
+            list.SelectedIndex(0);
+        }
+        if (auto hint = PluginAssetHint())
+        {
+            hint.Text(L"已按修改时间排列，最上是最新的。传到标签 " + tag + L"。");
+        }
+        if (auto dlg = PluginAssetDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Visible);
+        }
+    }
+
+    void EnhancedInputContent::_onPluginAssetCancel(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        _pluginPendingAssetTag.clear();
+        _pluginFoundAssets.clear();
+        if (auto dlg = PluginAssetDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Collapsed);
+        }
+    }
+
+    void EnhancedInputContent::_onPluginAssetUpload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        auto list = PluginAssetCombo();
+        const auto i = list ? list.SelectedIndex() : -1;
+        if (i < 0 || static_cast<size_t>(i) >= _pluginFoundAssets.size())
+        {
+            GitRun r;
+            r.message = L"请先选一个安装包。";
+            _showPluginGitResult(r);
+            return;
+        }
+        const auto file = _pluginFoundAssets[static_cast<size_t>(i)];
+        const auto tag = _pluginPendingAssetTag;
+        _pluginPendingAssetTag.clear();
+        _pluginFoundAssets.clear();
+        if (auto dlg = PluginAssetDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Collapsed);
+        }
+        _showPluginGitResult(_pluginGit().UploadReleaseAsset(tag, file));
+    }
+
+    void EnhancedInputContent::_onPluginAssetBrowse(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&)
+    {
+        if (auto dlg = PluginAssetDialog())
+        {
+            dlg.Visibility(WUX::Visibility::Collapsed);
+        }
+        _pickInstallerManually();
+    }
+
+    void EnhancedInputContent::_pickInstallerManually()
+    {
+        if (_pluginPendingAssetTag.empty())
+        {
+            auto combo = PluginTagCombo();
+            if (combo && combo.SelectedItem() != nullptr)
+            {
+                _pluginPendingAssetTag = std::wstring{ winrt::unbox_value<winrt::hstring>(combo.SelectedItem()) };
+            }
+        }
+        if (_pluginPendingAssetTag.empty())
+        {
+            GitRun r;
+            r.message = L"请先选一个版本标签。";
+            _showPluginGitResult(r);
+            return;
+        }
+
+        IFileOpenDialog* dlg = nullptr;
+        if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg))) || !dlg)
+        {
+            GitRun r;
+            r.message = L"打不开选文件窗口。";
+            _showPluginGitResult(r);
+            return;
+        }
+        COMDLG_FILTERSPEC filters[] = {
+            { L"安装包", L"*.exe;*.msix;*.msi;*.zip;*.appx;*.msixbundle;*.appxbundle" },
+            { L"所有文件", L"*.*" },
+        };
+        dlg->SetFileTypes(ARRAYSIZE(filters), filters);
+        dlg->SetTitle(L"选择要传到 GitHub 的安装包");
+        const auto cwd = _pluginWorkDir();
+        auto start = cwd / L"release";
+        std::error_code ec;
+        if (!std::filesystem::is_directory(start, ec))
+        {
+            start = cwd;
+        }
+        IShellItem* folder = nullptr;
+        if (SUCCEEDED(SHCreateItemFromParsingName(start.c_str(), nullptr, IID_PPV_ARGS(&folder))) && folder)
+        {
+            dlg->SetFolder(folder);
+            folder->Release();
+        }
+        const HRESULT hr = dlg->Show(GetActiveWindow());
+        if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED))
+        {
+            dlg->Release();
+            return;
+        }
+        if (FAILED(hr))
+        {
+            dlg->Release();
+            GitRun r;
+            r.message = L"没选到安装包。";
+            _showPluginGitResult(r);
+            return;
+        }
+        IShellItem* item = nullptr;
+        if (FAILED(dlg->GetResult(&item)) || !item)
+        {
+            dlg->Release();
+            GitRun r;
+            r.message = L"没选到安装包。";
+            _showPluginGitResult(r);
+            return;
+        }
+        dlg->Release();
+        PWSTR pathW = nullptr;
+        if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &pathW)) || !pathW)
+        {
+            item->Release();
+            GitRun r;
+            r.message = L"没选到安装包。";
+            _showPluginGitResult(r);
+            return;
+        }
+        item->Release();
+        std::filesystem::path file{ pathW };
+        CoTaskMemFree(pathW);
+        const auto tag = _pluginPendingAssetTag;
+        _pluginPendingAssetTag.clear();
+        _showPluginGitResult(_pluginGit().UploadReleaseAsset(tag, file));
     }
 
     void EnhancedInputContent::_onPluginHelpEnter(const Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs&)
@@ -2625,11 +3154,31 @@ namespace winrt::TerminalApp::implementation
         }
         else if (name == L"PluginBtnPush")
         {
-            help = L"推送GitHub：把已经提交、还没上网的版本推送到 GitHub，不再新提交一版。灰色表示没有可推送的内容。";
+            help = L"推送GitHub：把已经提交的版本推到 GitHub。网上仓库被删了会再弹出新建窗口，可以改仓库名。";
         }
         else if (name == L"PluginBtnPull")
         {
-            help = L"从 GitHub上取回：把网上最新内容拉回当前文件夹（git pull），不是重新 clone。";
+            help = L"从 GitHub上取回：把网上最新内容拉回当前文件夹（git pull），不是重新 clone。刚回滚过不要点，否则会把回滚撤掉。";
+        }
+        else if (name == L"PluginBtnTag")
+        {
+            help = L"打版本标签：给当前已经提交好的这一版起固定名（相当于 git tag）。有没提交的改动时不能打。已连接 GitHub 会把这个名字传到网上。";
+        }
+        else if (name == L"PluginBtnReset")
+        {
+            help = L"回到某版本：把这台电脑的文件打回所选标签（相当于 git reset --hard）。只改本机，不改 GitHub。会丢掉该版本之后的提交和未保存文件。";
+        }
+        else if (name == L"PluginBtnResetCommit")
+        {
+            help = L"回到这一版：用这条备注前面的短编号做 git reset --hard。只改本机。下拉内容和 git log --oneline 一样。";
+        }
+        else if (name == L"PluginBtnDeleteTag")
+        {
+            help = L"删除标签：只去掉这个名字（git tag -d）。提交和文件都还在。已推到 GitHub 时也会尽量删掉网上的同名标签。";
+        }
+        else if (name == L"PluginBtnUploadAsset")
+        {
+            help = L"上传安装包：先在本项目里找已打好的 exe/msix/zip，选一个挂到上面的版本（GitHub Release）。不进源码仓库。";
         }
         if (auto st = PluginWizardStatus())
         {

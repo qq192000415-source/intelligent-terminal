@@ -670,6 +670,21 @@
                                  FontSize="12"
                                  Header="这一版叫什么（可空）"
                                  PlaceholderText="空着会自动写成今天的存档名" />
+                        <TextBlock FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="已有存档（和 git log --oneline 一样，最新在上）。选中后可回到那一次。" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ComboBox x:Name="PluginLogCombo"
+                                      MinWidth="240"
+                                      MaxWidth="380"
+                                      AutomationProperties.Name="存档备注" />
+                            <Button x:Name="PluginBtnResetCommit"
+                                    Click="_onPluginResetCommitClick"
+                                    Content="回到这一版"
+                                    Padding="8,4"
+                                    PointerEntered="_onPluginHelpEnter"
+                                    PointerExited="_onPluginHelpLeave" />
+                        </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <CheckBox x:Name="PluginIncludeUnstaged"
                                       Content="把还没保存的文件也算进去"
@@ -716,6 +731,50 @@
                                 HorizontalAlignment="Stretch"
                                 PointerEntered="_onPluginHelpEnter"
                                 PointerExited="_onPluginHelpLeave" />
+                        <TextBlock Margin="0,8,0,0"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Text="正式版本" />
+                        <TextBlock FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="给已经提交好的这一版起个不会变的名字，方便以后回到它。不是上面的备注。" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox x:Name="PluginTagName"
+                                     MinWidth="180"
+                                     PlaceholderText="例如 stable-1.3.11" />
+                            <Button x:Name="PluginBtnTag"
+                                    Click="_onPluginTagClick"
+                                    Content="打版本标签"
+                                    Padding="8,4"
+                                    PointerEntered="_onPluginHelpEnter"
+                                    PointerExited="_onPluginHelpLeave" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ComboBox x:Name="PluginTagCombo"
+                                      MinWidth="180"
+                                      AutomationProperties.Name="回到某版本" />
+                            <Button x:Name="PluginBtnReset"
+                                    Click="_onPluginResetClick"
+                                    Content="回到某版本"
+                                    Padding="8,4"
+                                    PointerEntered="_onPluginHelpEnter"
+                                    PointerExited="_onPluginHelpLeave" />
+                            <Button x:Name="PluginBtnDeleteTag"
+                                    Click="_onPluginDeleteTagClick"
+                                    Content="删除标签"
+                                    Padding="8,4"
+                                    PointerEntered="_onPluginHelpEnter"
+                                    PointerExited="_onPluginHelpLeave" />
+                            <Button x:Name="PluginBtnUploadAsset"
+                                    Click="_onPluginUploadAssetClick"
+                                    Content="上传安装包"
+                                    Padding="8,4"
+                                    PointerEntered="_onPluginHelpEnter"
+                                    PointerExited="_onPluginHelpLeave" />
+                        </StackPanel>
+                        <TextBlock FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="点「上传安装包」会先在本项目里找已打好的 exe/msix/zip。挂到上面选中的版本，不进源码仓库。" />
                         <Button Click="_onPluginWizardBackHome"
                                 Content="回到插件页" />
                     </StackPanel>
@@ -761,6 +820,110 @@
                     </StackPanel>
                 </Border>
             </Grid>
+            <Grid x:Name="PluginAssetDialog"
+                  Canvas.ZIndex="20"
+                  Margin="-14,-8,-14,-12"
+                  Visibility="Collapsed">
+                <Rectangle Fill="Black"
+                           IsHitTestVisible="True"
+                           Opacity="0.75" />
+                <Border MaxWidth="360"
+                        Padding="16"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <StackPanel Spacing="10">
+                        <TextBlock FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Text="找到这些安装包" />
+                        <TextBlock x:Name="PluginAssetHint"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="选一个传到上面的版本标签。不是最新的可以点「自己选文件」。" />
+                        <ComboBox x:Name="PluginAssetCombo"
+                                  HorizontalAlignment="Stretch" />
+                        <Button Click="_onPluginAssetUpload"
+                                Content="上传这个"
+                                HorizontalAlignment="Stretch"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                        <Button Click="_onPluginAssetBrowse"
+                                Content="自己选文件"
+                                HorizontalAlignment="Stretch" />
+                        <Button Click="_onPluginAssetCancel"
+                                Content="取消"
+                                HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+            <Grid x:Name="PluginDeleteTagDialog"
+                  Canvas.ZIndex="20"
+                  Margin="-14,-8,-14,-12"
+                  Visibility="Collapsed">
+                <Rectangle Fill="Black"
+                           IsHitTestVisible="True"
+                           Opacity="0.75" />
+                <Border MaxWidth="340"
+                        Padding="16"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <StackPanel Spacing="10">
+                        <TextBlock FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Text="删除版本标签" />
+                        <TextBlock x:Name="PluginDeleteTagBody"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="只去掉这个名字。提交和文件都还在。" />
+                        <Button Click="_onPluginDeleteTagConfirm"
+                                Content="确定删除这个标签"
+                                HorizontalAlignment="Stretch" />
+                        <Button Click="_onPluginDeleteTagCancel"
+                                Content="取消"
+                                HorizontalAlignment="Stretch"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+            <Grid x:Name="PluginResetDialog"
+                  Canvas.ZIndex="20"
+                  Margin="-14,-8,-14,-12"
+                  Visibility="Collapsed">
+                <Rectangle Fill="Black"
+                           IsHitTestVisible="True"
+                           Opacity="0.75" />
+                <Border MaxWidth="340"
+                        Padding="16"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <StackPanel Spacing="10">
+                        <TextBlock FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Text="回到某版本" />
+                        <TextBlock x:Name="PluginResetBody"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="会丢掉这一版之后的提交，以及还没提交的文件。只改这台电脑，GitHub 上还是新的。" />
+                        <Button Click="_onPluginResetConfirm"
+                                Content="确定回到这一版"
+                                HorizontalAlignment="Stretch" />
+                        <Button Click="_onPluginResetCancel"
+                                Content="取消"
+                                HorizontalAlignment="Stretch"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
             <Grid x:Name="PluginVisibilityDialog"
                   Canvas.ZIndex="20"
                   Margin="-14,-8,-14,-12"
@@ -782,7 +945,11 @@
                                    Text="新建 GitHub 仓库" />
                         <TextBlock FontSize="12"
                                    TextWrapping="Wrap"
-                                   Text="这个项目还没有网上仓库。建成后别人能不能看见？默认私有。" />
+                                   Text="还没有网上仓库，或原来的已经删了。仓库名只能用英文、数字和横线，可自己改。GitHub 不能用中文名。" />
+                        <TextBox x:Name="PluginRepoName"
+                                 Header="仓库名字"
+                                 PlaceholderText="例如 qr-tool"
+                                 AutomationProperties.Name="仓库名字" />
                         <RadioButton x:Name="PluginVisPrivate"
                                      Content="私有（仅自己可见）"
                                      GroupName="PluginVis"

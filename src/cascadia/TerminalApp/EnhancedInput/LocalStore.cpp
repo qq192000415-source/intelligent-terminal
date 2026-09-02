@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "LocalStore.h"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -180,6 +181,20 @@ namespace winrt::TerminalApp::implementation
     {
         // Silent by contract — a corrupt file must not disrupt the panel / terminal.
         return kDefaultWidth;
+    }
+
+    float LocalStore::SplitFraction(float savedPx, float totalPx) noexcept
+    {
+        if (!std::isfinite(savedPx) || !std::isfinite(totalPx) || totalPx <= kMinWidth * 2.0f)
+        {
+            return kDefaultWidth / 1200.0f;
+        }
+        const auto raw = savedPx / totalPx;
+        if (!std::isfinite(raw))
+        {
+            return kDefaultWidth / 1200.0f;
+        }
+        return std::min(std::max(raw, 0.1f), kMaxWidthFraction);
     }
 
     // Persist the panel width. Rejects anything below kMinWidth: a pane that is

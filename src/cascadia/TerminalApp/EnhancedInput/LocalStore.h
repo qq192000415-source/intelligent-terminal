@@ -39,7 +39,8 @@ namespace winrt::TerminalApp::implementation
         // window, and kMinWidth matches EnhancedInputContent::MinimumSize().
         static constexpr float kDefaultWidth = 400.0f;
         static constexpr float kMinWidth = 280.0f;
-        static constexpr float kMaxWidthFraction = 0.75f;
+        // Codex 原上限 0.4：面板不得占掉大半终端。0.75 会让已保存的 ~800px 一开就盖住左侧。
+        static constexpr float kMaxWidthFraction = 0.4f;
 
         // commandsDir 默认 %USERPROFILE%\.claude；layoutDir 为空则与 commandsDir 相同
         // （保持旧单测：只注入一个 temp 目录时两个文件都在那里）。
@@ -63,6 +64,11 @@ namespace winrt::TerminalApp::implementation
         // or not-yet-laid-out pane reports ~0 and must not overwrite a good
         // width). Returns false on any IO failure.
         bool SavePanelWidth(float width) const noexcept;
+
+        // Fraction of the tab given to the right-hand panel. Never above
+        // kMaxWidthFraction (0.4). Tiny/unknown window widths fall back to
+        // kDefaultWidth/1200 so a not-yet-laid-out page cannot open at 50%+.
+        static float SplitFraction(float savedPx, float totalPx) noexcept;
 
         const std::filesystem::path& FilePath() const noexcept { return _file; }
         const std::filesystem::path& LayoutFilePath() const noexcept { return _layoutFile; }

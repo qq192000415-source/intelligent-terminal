@@ -3435,12 +3435,7 @@ namespace winrt::TerminalApp::implementation
                     LocalStore ls;
                     const auto savedPx = ls.LoadPanelWidth();
                     const auto totalPx = static_cast<float>(_tabContent.ActualWidth());
-                    float splitSize = LocalStore::kDefaultWidth / 1200.0f;
-                    if (totalPx > LocalStore::kMinWidth * 2.0f)
-                    {
-                        const auto raw = savedPx / totalPx;
-                        splitSize = std::min(std::max(raw, 0.1f), LocalStore::kMaxWidthFraction);
-                    }
+                    const auto splitSize = LocalStore::SplitFraction(savedPx, totalPx);
                     activeTab->SplitPaneAtRoot(SplitDirection::Right, newPane, splitSize);
                 }
                 if (const auto& content{ newPane->GetContent() })

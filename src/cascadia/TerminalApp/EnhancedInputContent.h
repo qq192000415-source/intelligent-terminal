@@ -115,6 +115,13 @@ namespace winrt::TerminalApp::implementation
         std::wstring _pluginLastStatus;
         bool _pluginPendingCommitThenPush{ false };
         bool _pluginFillingBranches{ false };
+        bool _pluginDidFetchTags{ false };
+        bool _pluginRolledBack{ false };
+        std::wstring _pluginPendingResetTag;
+        std::wstring _pluginPendingResetHash;
+        std::wstring _pluginPendingDeleteTag;
+        std::wstring _pluginPendingAssetTag;
+        std::vector<std::filesystem::path> _pluginFoundAssets;
 
         void _updateTargetPill();
         void _buildCommandCards();
@@ -122,7 +129,8 @@ namespace winrt::TerminalApp::implementation
         void _showPluginWizard(int step);
         void _setPluginHomeChrome();
         void _launchUri(std::wstring_view uri);
-        void _probePluginGithub();
+        safe_void_coroutine _probePluginGithub();
+        float _lastSavedPanelWidth{ 0 };
         void _onPluginGithubInstall(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginGithubOpen(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginGithubReconnect(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
@@ -156,7 +164,22 @@ namespace winrt::TerminalApp::implementation
         void _onPluginNewBranchCancel(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _onPluginUnstagedChanged(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _fillPluginBranches();
+        void _fillPluginTags();
+        void _fillPluginLog();
+        void _onPluginResetCommitClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginDeleteTagClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginDeleteTagConfirm(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginDeleteTagCancel(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
         void _refreshPluginDiffCounts();
+        void _onPluginTagClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginResetClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginResetConfirm(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginResetCancel(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginUploadAssetClick(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _pickInstallerManually();
+        void _onPluginAssetUpload(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginAssetBrowse(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
+        void _onPluginAssetCancel(const Windows::Foundation::IInspectable&, const winrt::Windows::UI::Xaml::RoutedEventArgs&);
 
         // Tab switching
         void _applyPaletteTab(PaletteTab tab);

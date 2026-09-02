@@ -25,6 +25,8 @@ namespace winrt::TerminalApp::implementation
         std::filesystem::path cwd;
 
         static std::filesystem::path FindGit();
+        // OSC7 file:// URI or a Windows path → absolute directory. Empty if unusable.
+        static std::filesystem::path NormalizeWorkDir(std::wstring wd);
         static std::wstring AutoMessage(const std::filesystem::path& folder);
         // Non-empty when Git Credential Manager already has a github.com user.
         // Never prints or returns the secret. Times out instead of hanging the UI.
@@ -32,6 +34,7 @@ namespace winrt::TerminalApp::implementation
         // Opens the browser login UI (GCM). Does not wait.
         static bool StartGithubLogin();
         static std::wstring SanitizeRepoName(const std::wstring& folderLeaf);
+        static bool IsRemoteGone(const GitRun& r);
         // Creates github.com/user/<name>. Does not log the token. On success, `out` is the clone URL.
         GitRun CreateGithubRepo(const std::wstring& name, bool isPrivate) const;
 
@@ -57,5 +60,33 @@ namespace winrt::TerminalApp::implementation
         GitRun Push() const;
         GitRun Pull() const;
         GitRun SetRemote(const std::wstring& url) const;
+
+        bool HasHead() const;
+        bool TagExists(const std::wstring& name) const;
+        std::vector<std::wstring> LocalTags() const;
+        GitRun FetchTags() const;
+        GitRun Tag(const std::wstring& raw) const; // lightweight; refuses dirty / duplicate
+        GitRun PushTag(const std::wstring& name) const;
+        GitRun ResetHardToTag(const std::wstring& name) const;
+        static std::wstring SanitizeTagName(const std::wstring& raw);
+
+        struct LogLine
+        {
+            std::wstring hash;
+            std::wstring message;
+            std::wstring display; // "hash message"，和 git log --oneline 一行一样
+        };
+        std::vector<LogLine> LogOneline(int maxN = 50) const;
+        GitRun ResetHardToCommit(const std::wstring& hash) const;
+        // Local git tag -d. alsoRemote: git push <remote> --delete refs/tags/<name>
+        GitRun DeleteTag(const std::wstring& name, bool alsoRemote) const;
+
+        // owner/repo from github.com remote URL. False if not GitHub.
+        static bool ParseGithubUrl(const std::wstring& url, std::wstring& owner, std::wstring& repo);
+        std::wstring RemoteUrl() const;
+        // Create/update GitHub Release for tag and upload a local installer. Does not git-add the file.
+        GitRun UploadReleaseAsset(const std::wstring& tag, const std::filesystem::path& file) const;
+        // Newest first. Skips node_modules/.git and tiny stub launchers.
+        static std::vector<std::filesystem::path> FindInstallers(const std::filesystem::path& root);
     };
 }

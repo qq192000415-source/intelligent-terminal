@@ -34,6 +34,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(LoadDropsRowsWithEmptyCmd);
         TEST_METHOD(SaveCreatesMissingParentDirs);
         TEST_METHOD(CommandsAndLayoutCanLiveInDifferentDirs);
+        TEST_METHOD(SplitFractionNeverExceedsFortyPercent);
 
         TEST_METHOD_SETUP(Setup);
         TEST_METHOD_CLEANUP(Cleanup);
@@ -151,5 +152,22 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(std::wstring{ L"/x" }, loaded[0].cmd);
         // Extra parens: TAEF VERIFY_ARE_EQUAL is a macro and would split on the ctor comma.
         VERIFY_ARE_EQUAL(400.0f, (LocalStore{ cmdDir, layoutDir }.LoadPanelWidth()));
+    }
+
+    void LocalStoreTests::SplitFractionNeverExceedsFortyPercent()
+    {
+        // Pin the cap: a later 0.75 would let ~863px cover half the terminal again.
+        VERIFY_ARE_EQUAL(0.4f, LocalStore::kMaxWidthFraction);
+
+        const auto wide = LocalStore::SplitFraction(863.0f, 1600.0f);
+        VERIFY_IS_TRUE(wide <= LocalStore::kMaxWidthFraction + 1.0e-5f);
+        VERIFY_ARE_EQUAL(0.4f, wide);
+
+        const auto normal = LocalStore::SplitFraction(400.0f, 1200.0f);
+        VERIFY_IS_TRUE(normal < 0.4f);
+        VERIFY_IS_TRUE(normal > 0.3f);
+
+        const auto tinyWindow = LocalStore::SplitFraction(400.0f, 400.0f);
+        VERIFY_ARE_EQUAL(LocalStore::kDefaultWidth / 1200.0f, tinyWindow);
     }
 }
