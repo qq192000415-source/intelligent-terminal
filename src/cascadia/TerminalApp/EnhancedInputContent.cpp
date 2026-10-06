@@ -207,7 +207,7 @@ namespace winrt::TerminalApp::implementation
                 cmdText.Text(winrt::hstring{ entry.cmd });
                 cmdText.FontFamily(WUX::Media::FontFamily{ L"Cascadia Code, Consolas, Courier New" });
                 cmdText.FontSize(12);
-                // Wrap long commands (/approved-tools, /terminal-setup) instead of
+                // Wrap long commands (/security-review, /release-notes) instead of
                 // clipping them when the panel is narrow — mirrors the skill cards.
                 cmdText.TextWrapping(WUX::TextWrapping::Wrap);
 
@@ -285,7 +285,7 @@ namespace winrt::TerminalApp::implementation
     }
 
     // Left click: fill => TypeToTerminal (insert without Enter); else Send.
-    // Claude table entries all have fill==false, so their left-click behavior is unchanged.
+    // Claude table: 4 fill entries (/btw, /rename, claude --resume, /plan) take arguments.
     // The danger marker (⚠) is visual-only — it warns the user but no longer gates the click.
     void EnhancedInputContent::_onCmdCardClick(const IInspectable& sender, const WUX::RoutedEventArgs&)
     {

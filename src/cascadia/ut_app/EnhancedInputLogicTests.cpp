@@ -35,11 +35,13 @@ namespace TerminalAppUnitTests
         TEST_METHOD(PayloadAttachmentsOnlyHasNoLeadingSpace);
 
         // CommandData
-        TEST_METHOD(BuiltInCommandCountIs23);
-        TEST_METHOD(BuiltInGroupCountIs5);
+        TEST_METHOD(BuiltInCommandCountIs39);
+        TEST_METHOD(BuiltInGroupCountIs7);
         TEST_METHOD(OnlyClearIsMarkedDanger);
         TEST_METHOD(EveryEntryHasCmdAndTagAndDesc);
-        TEST_METHOD(EveryBuiltInEntryHasFillFalse);
+        TEST_METHOD(FillEntriesAreExactlyFour);
+        TEST_METHOD(FillCommandsEndWithSpace);
+        TEST_METHOD(NoPlaceholderOrRetiredCommands);
     };
 
     // ---- ComposerLogic ----
@@ -101,20 +103,20 @@ namespace TerminalAppUnitTests
 
     // ---- CommandData ----
 
-    void EnhancedInputLogicTests::BuiltInCommandCountIs23()
+    void EnhancedInputLogicTests::BuiltInCommandCountIs39()
     {
-        // The tab badge shows this count and the docs pin it at 23 (5 groups).
+        // 徽标显示此数，7 组。
         size_t total = 0;
         for (const auto& group : kCommandGroups)
         {
             total += group.entries.size();
         }
-        VERIFY_ARE_EQUAL(size_t{ 23 }, total);
+        VERIFY_ARE_EQUAL(size_t{ 39 }, total);
     }
 
-    void EnhancedInputLogicTests::BuiltInGroupCountIs5()
+    void EnhancedInputLogicTests::BuiltInGroupCountIs7()
     {
-        VERIFY_ARE_EQUAL(size_t{ 5 }, std::size(kCommandGroups));
+        VERIFY_ARE_EQUAL(size_t{ 7 }, std::size(kCommandGroups));
     }
 
     void EnhancedInputLogicTests::OnlyClearIsMarkedDanger()
@@ -154,15 +156,66 @@ namespace TerminalAppUnitTests
         }
     }
 
-    void EnhancedInputLogicTests::EveryBuiltInEntryHasFillFalse()
+    void EnhancedInputLogicTests::FillEntriesAreExactlyFour()
+    {
+        std::vector<std::wstring> fill;
+        for (const auto& group : kCommandGroups)
+        {
+            for (const auto& e : group.entries)
+            {
+                if (e.fill)
+                {
+                    fill.emplace_back(e.cmd);
+                }
+            }
+        }
+        VERIFY_ARE_EQUAL(size_t{ 4 }, fill.size());
+        VERIFY_IS_TRUE(std::find(fill.begin(), fill.end(), L"/btw ") != fill.end());
+        VERIFY_IS_TRUE(std::find(fill.begin(), fill.end(), L"/rename ") != fill.end());
+        VERIFY_IS_TRUE(std::find(fill.begin(), fill.end(), L"claude --resume ") != fill.end());
+        VERIFY_IS_TRUE(std::find(fill.begin(), fill.end(), L"/plan ") != fill.end());
+    }
+
+    void EnhancedInputLogicTests::FillCommandsEndWithSpace()
     {
         for (const auto& group : kCommandGroups)
         {
             for (const auto& e : group.entries)
             {
-                VERIFY_IS_FALSE(e.fill, NoThrowString().Format(
-                    L"Claude command '%s' must not be fill",
-                    std::wstring{ e.cmd }.c_str()));
+                if (e.fill)
+                {
+                    VERIFY_IS_FALSE(e.cmd.empty());
+                    VERIFY_ARE_EQUAL(L' ', e.cmd.back(), NoThrowString().Format(
+                        L"fill cmd must end with space: %s", std::wstring{ e.cmd }.c_str()));
+                }
+            }
+        }
+    }
+
+    void EnhancedInputLogicTests::NoPlaceholderOrRetiredCommands()
+    {
+        static constexpr std::wstring_view retired[] = {
+            L"/vim",
+            L"/code init",
+            L"/approved-tools",
+            L"/cost",
+            L"/terminal-setup",
+            L"claude -c",
+            L"claude -r",
+        };
+        for (const auto& group : kCommandGroups)
+        {
+            for (const auto& e : group.entries)
+            {
+                VERIFY_ARE_EQUAL(std::wstring_view::npos, e.cmd.find(L'<'),
+                    NoThrowString().Format(L"cmd has <: %s", std::wstring{ e.cmd }.c_str()));
+                VERIFY_ARE_EQUAL(std::wstring_view::npos, e.cmd.find(L'>'),
+                    NoThrowString().Format(L"cmd has >: %s", std::wstring{ e.cmd }.c_str()));
+                for (const auto banned : retired)
+                {
+                    VERIFY_IS_FALSE(e.cmd == banned, NoThrowString().Format(
+                        L"retired cmd still present: %s", std::wstring{ e.cmd }.c_str()));
+                }
             }
         }
     }
